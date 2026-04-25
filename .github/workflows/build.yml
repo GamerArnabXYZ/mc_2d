@@ -13,9 +13,10 @@ permissions:
   id-token: write
 
 env:
-  RAYLIB_VERSION: 5.0.0
-  NDK_VERSION:    26.3.11579264
-  JAVA_VERSION:   17
+  # Correct tag: raylib uses "5.0" not "5.0.0"
+  RAYLIB_TAG:     "5.0"
+  NDK_VERSION:    "26.3.11579264"
+  JAVA_VERSION:   "17"
 
 jobs:
 # ================================================================
@@ -35,24 +36,27 @@ jobs:
           version: 3.1.64
           actions-cache-folder: emsdk-cache
 
-      - name: Cache Raylib (Web)
+      - name: Cache Raylib Web build
         id: cache-raylib-web
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_VERSION }}-emscripten-v3
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v4
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          # FIX: curl -fL instead of wget (handles GitHub 302 redirects)
+          # FIXED: correct tag is "5.0" not "5.0.0"
           curl -fL -o raylib.tar.gz \
-            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz"
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
           tar xf raylib.tar.gz
-          cd raylib-${{ env.RAYLIB_VERSION }}/src
+          # Folder extracted as raylib-5.0/
+          ls -d raylib-*/
+          RDIR=$(ls -d raylib-*/ | head -1)
+          cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          cp libraylib.a            ../../raylib-web/lib/
+          cp libraylib.a              ../../raylib-web/lib/
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
           echo "✅ Raylib web: $(ls -lh ../../raylib-web/lib/)"
 
@@ -178,19 +182,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-android
-          key: raylib-${{ env.RAYLIB_VERSION }}-android-ndk${{ env.NDK_VERSION }}-v3
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v4
 
-      - name: Build Raylib for Android (CMake per ABI)
+      - name: Build Raylib for Android (CMake)
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
         run: |
-          # FIX: curl -fL handles GitHub redirects (wget exit 8 fix)
+          # FIXED: correct tag "5.0" not "5.0.0"
           curl -fL -o raylib.tar.gz \
-            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz"
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
           tar xf raylib.tar.gz
-          RAYLIB_SRC="$PWD/raylib-${{ env.RAYLIB_VERSION }}"
+          RAYLIB_SRC=$(ls -d "$PWD"/raylib-*/ | head -1)
+          RAYLIB_SRC="${RAYLIB_SRC%/}"
+          echo "Raylib source: $RAYLIB_SRC"
 
           for ABI in armeabi-v7a arm64-v8a x86_64; do
-            echo "=== Raylib: $ABI ==="
+            echo "=== Building Raylib: $ABI ==="
             BD="$PWD/rl-build-$ABI"
             mkdir -p "$BD"
 
@@ -208,11 +214,11 @@ jobs:
             cmake --build "$BD" --target raylib -j$(nproc)
 
             mkdir -p "raylib-android/$ABI/lib" "raylib-android/include"
-            cp "$BD/raylib/libraylib.a"   "raylib-android/$ABI/lib/"
-            cp "$RAYLIB_SRC/src/raylib.h" \
-               "$RAYLIB_SRC/src/raymath.h" \
-               "$RAYLIB_SRC/src/rlgl.h"   "raylib-android/include/"
-            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/)"
+            cp "$BD/raylib/libraylib.a"        "raylib-android/$ABI/lib/"
+            cp "$RAYLIB_SRC/src/raylib.h"      "raylib-android/include/"
+            cp "$RAYLIB_SRC/src/raymath.h"     "raylib-android/include/"
+            cp "$RAYLIB_SRC/src/rlgl.h"        "raylib-android/include/"
+            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/libraylib.a)"
           done
 
       - name: Prepare JNI sources
@@ -225,21 +231,9 @@ jobs:
           cp -r src/input    "$JNI/src/"
           cp -r src/ui       "$JNI/src/"
           cp    src/main.c   "$JNI/src/"
-          # Put prebuilt raylib inside jni so CMakeLists can find it
           cp -r raylib-android "$JNI/raylib-android"
           mkdir -p build-android/app/src/main/assets
           cp -r assets/. build-android/app/src/main/assets/ 2>/dev/null || true
-          echo "JNI tree:"
-          find "$JNI" -name "*.c" -o -name "*.h" | head -30
-
-      - name: Patch CMakeLists raylib path
-        run: |
-          # Point to local jni/raylib-android instead of ../../..
-          sed -i \
-            's|set(RAYLIB_DIR.*)|set(RAYLIB_DIR "${CMAKE_SOURCE_DIR}/raylib-android")|' \
-            build-android/app/src/main/jni/CMakeLists.txt
-          echo "CMakeLists after patch:"
-          grep -n "RAYLIB_DIR\|RAYLIB_LIB" build-android/app/src/main/jni/CMakeLists.txt
 
       - name: Generate Keystore
         run: |
@@ -251,7 +245,6 @@ jobs:
 
       - name: Write gradle.properties
         run: |
-          # NO leading spaces — gradle.properties is whitespace-sensitive
           cat > build-android/gradle.properties << 'EOF'
           android.useAndroidX=true
           org.gradle.jvmargs=-Xmx2048m
@@ -275,7 +268,6 @@ jobs:
           ./gradlew assembleRelease \
             -Pandroid.ndkVersion=${{ env.NDK_VERSION }} \
             --no-daemon --stacktrace
-          echo "✅ APKs:"
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
       - name: Rename APKs
@@ -326,7 +318,7 @@ jobs:
             | Android  | Universal | All ABIs bundled |
             | Web/WASM | — | [▶ Play Now](https://gamerarnabxyz.github.io/mc_2d) |
 
-            **Stack:** C99 · Raylib 5.0 · Emscripten 3.1.64 · NDK 26.3
+            **Stack:** C99 · Raylib ${{ env.RAYLIB_TAG }} · Emscripten 3.1.64 · NDK 26.3
           draft: false
           prerelease: false
           files: release-apks/*.apk
