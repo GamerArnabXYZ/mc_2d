@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AndroidManifest.xml — MC2D NativeActivity -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.gax.mc2d"
+    android:versionCode="1"
+    android:versionName="1.0.0">
+
+    <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <application
+        android:allowBackup="false"
+        android:label="MC2D"
+        android:hasCode="false">
+
+        <!-- Pure NativeActivity — no Java Activity needed -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="MC2D"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="true">
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="mc2d"/>
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

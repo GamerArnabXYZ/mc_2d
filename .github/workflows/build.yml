@@ -1,305 +1,330 @@
-name: MC Clone Build Pipeline
+name: MC2D Build & Release
 
 on:
   push:
-    branches: [ main, develop ]
-    tags:
-      - 'v*'
+    branches: [main]
+    tags:     ['v*']
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
+permissions:
+  contents: write
+  pages:    write
+  id-token: write
+
+# ============================================================
+# Global env
+# ============================================================
 env:
-  GAME_NAME: mc-clone
-  GAME_VERSION: 1.0.0
-  NDK_VERSION: r26d
-  EMSDK_VERSION: 3.1.68
-  ANDROID_API: 24
+  RAYLIB_VERSION: 5.0.0
+  NDK_VERSION:    26.3.11579264
+  JAVA_VERSION:   17
+  PROJECT_NAME:   mc2d
 
 jobs:
-  # ============================================
-  # WEB BUILD - Emscripten + WASM + WebGL
-  # ============================================
+# ==============================================================
+# JOB 1: WebAssembly Build + Deploy to gh-pages
+# ==============================================================
   build-web:
-    name: Build Web (WASM + WebGL)
+    name: "🌐 WebAssembly (Emscripten)"
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Emscripten
-        id: cache-emsdk
+      - name: Install Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.64
+          actions-cache-folder: emsdk-cache
+
+      - name: Cache Raylib (Web)
+        id: cache-raylib-web
         uses: actions/cache@v4
         with:
-          path: |
-            ~/emsdk
-            ~/.emscripten_cache
-          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}
+          path: raylib-web
+          key: raylib-${{ env.RAYLIB_VERSION }}-emscripten
 
-      - name: Setup Emscripten
-        if: steps.cache-emsdk.outputs.cache-hit != 'true'
+      - name: Build Raylib for Web
+        if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install ${{ env.EMSDK_VERSION }}
-          ./emsdk activate ${{ env.EMSDK_VERSION }}
+          wget -q https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz
+          tar xf ${{ env.RAYLIB_VERSION }}.tar.gz
+          cd raylib-${{ env.RAYLIB_VERSION }}/src
+          emmake make PLATFORM=PLATFORM_WEB -j$(nproc)
+          mkdir -p ../../raylib-web/lib ../../raylib-web/include
+          cp libraylib.a ../../raylib-web/lib/
+          cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
 
-      - name: Build Web Version
+      - name: Create Web Shell HTML
         run: |
-          source ~/emsdk/emsdk_env.sh
-          cd ${{ github.workspace }}
+          mkdir -p web
+          cat > web/shell.html << 'SHELL_EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+            <title>MC2D — ArnabLabZ</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { background: #1a1a2e; display: flex; flex-direction: column;
+                     align-items: center; justify-content: center; height: 100vh;
+                     font-family: monospace; color: #eee; overflow: hidden; }
+              #canvas-container { position: relative; }
+              canvas { display: block; border: 2px solid #333;
+                       image-rendering: pixelated; touch-action: none; }
+              #loading { position: absolute; inset: 0; display: flex;
+                         align-items: center; justify-content: center;
+                         background: #1a1a2e; font-size: 1.4rem; }
+              #progress-bar { width: 300px; height: 8px; background: #333;
+                              border-radius: 4px; overflow: hidden; margin-top: 16px; }
+              #progress-fill { height: 100%; background: #64c8ff;
+                               transition: width 0.3s; width: 0%; }
+              .status { text-align: center; }
+            </style>
+          </head>
+          <body>
+            <div id="canvas-container">
+              <canvas id="canvas" oncontextmenu="return false;"></canvas>
+              <div id="loading">
+                <div class="status">
+                  <div>⛏ MC2D Loading...</div>
+                  <div id="progress-bar"><div id="progress-fill"></div></div>
+                  <div id="load-text" style="margin-top:8px;font-size:0.8rem;color:#888">Initializing...</div>
+                </div>
+              </div>
+            </div>
+            <script>
+              var Module = {
+                canvas: (function() { return document.getElementById('canvas'); })(),
+                setStatus: function(text) {
+                  document.getElementById('load-text').textContent = text || 'Ready';
+                  if (!text) document.getElementById('loading').style.display = 'none';
+                },
+                monitorRunDependencies: function(left) {
+                  var pct = left ? Math.max(0, 100 - left * 10) : 100;
+                  document.getElementById('progress-fill').style.width = pct + '%';
+                },
+                onRuntimeInitialized: function() {
+                  document.getElementById('loading').style.display = 'none';
+                }
+              };
+              window.onerror = function(e) { console.error('MC2D Error:', e); };
+            </script>
+            {{{ SCRIPT }}}
+          </body>
+          </html>
+          SHELL_EOF
 
-          mkdir -p build-web
-          cd build-web
-
-          # Emscripten handles PLATFORM automatically via emcmake
-          emcmake cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DGAME_NAME=${{ env.GAME_NAME }}
-
-          emmake make -j$(nproc)
-
-          mkdir -p deploy
-          cp index.html deploy/
-          cp *.js deploy/
-          cp *.wasm deploy/
-          cp *.data deploy/ 2>/dev/null || true
-
-      - name: Upload Web Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-build
-          path: build-web/deploy/
-          retention-days: 30
-
-  # ============================================
-  # ANDROID BUILD - NDK + Gradle
-  # ============================================
-  build-android:
-    name: Build Android (NDK)
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        abi: [armeabi-v7a, arm64-v8a, x86_64]
-        include:
-          - abi: armeabi-v7a
-            artifact_suffix: arm7
-          - abi: arm64-v8a
-            artifact_suffix: arm64
-          - abi: x86_64
-            artifact_suffix: x86_64
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
-
-      - name: Cache NDK
-        id: cache-ndk
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ github.workspace }}/android-ndk
-          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}-${{ matrix.abi }}
-
-      - name: Setup Android NDK
-        if: steps.cache-ndk.outputs.cache-hit != 'true'
+      - name: Build WebAssembly
         run: |
-          cd ${{ github.workspace }}
-          curl -sL https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip -o android-ndk.zip
-          unzip -q android-ndk.zip
-          mv android-ndk-* android-ndk
-          rm android-ndk.zip
-
-      - name: Build Android - ${{ matrix.abi }}
-        run: |
-          cd ${{ github.workspace }}/platforms/android
-
-          mkdir -p app/src/main/jniLibs/${{ matrix.abi }}
-
-          # Compile each source file individually (mc_types.h is header-only)
-          NDK_PATH=${{ github.workspace }}/android-ndk
-          clang=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
-          TARGET=${{ matrix.abi }}-linux-android24
-          INCLUDES="-I../../include -I$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
-
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_perlin.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_perlin.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_chunk.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_chunk.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_texture.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_texture.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_input.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_input.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_physics.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_physics.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_camera.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_camera.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_player.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_player.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_world.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_world.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/core/mc_game.c -o app/src/main/jniLibs/${{ matrix.abi }}/mc_game.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/game.c -o app/src/main/jniLibs/${{ matrix.abi }}/game.o || true
-          $clang -target $TARGET $INCLUDES -c ../../src/main.c -o app/src/main/jniLibs/${{ matrix.abi }}/main.o || true
-          $clang -target $TARGET $INCLUDES -c app/src/main/cpp/game_android.cpp -o app/src/main/jniLibs/${{ matrix.abi }}/game_android.o || true
-          $clang -target $TARGET $INCLUDES -c app/src/main/cpp/native-lib.cpp -o app/src/main/jniLibs/${{ matrix.abi }}/native-lib.o || true
-
-          chmod +x gradlew
-          ./gradlew assembleDebug \
-            -PABI_FILTER=${{ matrix.abi }} \
-            -PNDK_VERSION=${{ env.NDK_VERSION }}
-
-      - name: Rename APK
-        run: |
-          cd ${{ github.workspace }}/platforms/android
-          mv app/build/outputs/apk/debug/*.apk \
-             ${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-${{ matrix.artifact_suffix }}.apk
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk-${{ matrix.artifact_suffix }}
-          path: platforms/android/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-${{ matrix.artifact_suffix }}.apk
-          retention-days: 30
-
-  # ============================================
-  # UNIVERSAL APK BUILD
-  # ============================================
-  build-android-universal:
-    name: Build Android Universal APK
-    runs-on: ubuntu-22.04
-    needs: build-android
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
-
-      - name: Build Universal APK
-        run: |
-          cd ${{ github.workspace }}/platforms/android
-
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-          mkdir -p universal
-          cp app/build/outputs/apk/debug/*.apk universal/
-
-      - name: Rename Universal APK
-        run: |
-          cd ${{ github.workspace }}/platforms/android
-          mv universal/*.apk \
-             ${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-universal.apk
-
-      - name: Upload Universal APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk-universal
-          path: platforms/android/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-universal.apk
-          retention-days: 30
-
-  # ============================================
-  # DEPLOY TO GITHUB PAGES (Web)
-  # ============================================
-  deploy-web:
-    name: Deploy to GitHub Pages
-    runs-on: ubuntu-22.04
-    needs: build-web
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-
-    steps:
-      - name: Download Web Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: web-build
-          path: deploy
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: deploy
+          emcc -std=c99 -O2 \
+            -Isrc \
+            -Iraylib-web/include \
+            -DPLATFORM_WEB \
+            -s USE_GLFW=3 \
+            -s ASYNCIFY \
+            -s TOTAL_MEMORY=134217728 \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s WASM=1 \
+            -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
+            -s MAX_WEBGL_VERSION=1 \
+            --shell-file web/shell.html \
+            --preload-file assets \
+            src/main.c \
+            src/world/blocks.c \
+            src/world/chunk.c \
+            src/world/worldgen.c \
+            src/player/player.c \
+            src/player/inventory.c \
+            src/renderer/textures.c \
+            src/input/input.c \
+            raylib-web/lib/libraylib.a \
+            -lm \
+            -o web/index.html
+          echo "✅ WASM build complete"
+          ls -lh web/
 
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:  ./web
+          publish_branch: gh-pages
+          commit_message: "🌐 Deploy MC2D Web Build"
 
-      - name: Print Deployment URL
-        run: |
-          echo "Game deployed to: ${{ steps.deployment.outputs.page_url }}"
-
-  # ============================================
-  # RELEASE MANAGEMENT
-  # ============================================
-  create-release:
-    name: Create Release
+# ==============================================================
+# JOB 2: Android APK Build (4 variants)
+# ==============================================================
+  build-android:
+    name: "🤖 Android APKs (4 ABIs)"
     runs-on: ubuntu-22.04
-    needs: [build-web, build-android, build-android-universal]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download Web Artifact
-        uses: actions/download-artifact@v4
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
         with:
-          name: web-build
-          path: release/web
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Download Android Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: android-apk-*
-          path: release/android
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
 
-      - name: Create Release Package
+      - name: Install NDK ${{ env.NDK_VERSION }}
         run: |
-          mkdir -p release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}
+          sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-          cp -r release/web/* release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/web/
-          cp -r release/android/* release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/android/
+      - name: Cache Raylib (Android ARM64)
+        id: cache-raylib-arm64
+        uses: actions/cache@v4
+        with:
+          path: raylib-android
+          key: raylib-${{ env.RAYLIB_VERSION }}-android-ndk${{ env.NDK_VERSION }}
 
-          cat > release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/RELEASE_NOTES.md << 'EOF'
-          # ${{ env.GAME_NAME }} v${{ env.GAME_VERSION }}
+      - name: Build Raylib for Android (All ABIs)
+        if: steps.cache-raylib-arm64.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz
+          tar xf ${{ env.RAYLIB_VERSION }}.tar.gz
+          
+          for ABI in armeabi-v7a arm64-v8a x86_64; do
+            echo "Building Raylib for $ABI..."
+            cd raylib-${{ env.RAYLIB_VERSION }}/src
+            
+            if [ "$ABI" = "armeabi-v7a" ]; then
+              ARCH_FLAG="--target=armv7a-linux-androideabi21"
+              TOOLCHAIN="arm-linux-androideabi"
+            elif [ "$ABI" = "arm64-v8a" ]; then
+              ARCH_FLAG="--target=aarch64-linux-android21"
+              TOOLCHAIN="aarch64-linux-android"
+            elif [ "$ABI" = "x86_64" ]; then
+              ARCH_FLAG="--target=x86_64-linux-android21"
+              TOOLCHAIN="x86_64-linux-android"
+            fi
+            
+            NDK_TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+            
+            make PLATFORM=PLATFORM_ANDROID \
+              ANDROID_NDK=$NDK_HOME \
+              ANDROID_ARCH=$ABI \
+              CC="$NDK_TOOLCHAIN/clang $ARCH_FLAG" \
+              AR="$NDK_TOOLCHAIN/llvm-ar" \
+              -j$(nproc)
+            
+            mkdir -p ../../raylib-android/$ABI/lib ../../raylib-android/include
+            cp libraylib.a ../../raylib-android/$ABI/lib/
+            cp raylib.h raymath.h rlgl.h ../../raylib-android/include/
+            make clean
+            cd ../..
+          done
 
-          ## Downloads
-          - **Web**: Extract and host index.html
-          - **Android ARM64**: mc-clone-${{ env.GAME_VERSION }}-arm64.apk
-          - **Android ARMv7**: mc-clone-${{ env.GAME_VERSION }}-arm7.apk
-          - **Android x86_64**: mc-clone-${{ env.GAME_VERSION }}-x86_64.apk
-          - **Android Universal**: mc-clone-${{ env.GAME_VERSION }}-universal.apk
+      - name: Generate Keystore (CI use only)
+        run: |
+          keytool -genkeypair -v \
+            -keystore build-android/mc2d-release.keystore \
+            -alias mc2d \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android \
+            -keypass android \
+            -dname "CN=MC2D,OU=ArnabLabZ,O=GAX,L=BD,ST=DH,C=BD"
 
-          ## Features
-          - Infinite procedural world
-          - WebAssembly + WebGL support
-          - Native Android builds
-          - Zero-crash texture fallback system
-
-          Built with C99 + Raylib
+      - name: Write Gradle Signing Config
+        run: |
+          cat >> build-android/gradle.properties << 'EOF'
+          RELEASE_STORE_FILE=mc2d-release.keystore
+          RELEASE_KEY_ALIAS=mc2d
+          RELEASE_STORE_PASSWORD=android
+          RELEASE_KEY_PASSWORD=android
           EOF
 
-      - name: Create GitHub Release
+      - name: Setup Gradle build files
+        run: |
+          # Copy native sources into JNI tree
+          mkdir -p build-android/app/src/main/jni/src
+          cp -r src/* build-android/app/src/main/jni/src/
+          cp -r assets build-android/app/src/main/assets/ || true
+
+      - name: Build Release APKs
+        working-directory: build-android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+          echo "✅ APK build complete"
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+
+      - name: Rename APKs clearly
+        run: |
+          cd build-android/app/build/outputs/apk/release
+          # Expected: app-armeabi-v7a-release.apk etc.
+          for apk in *.apk; do
+            mv "$apk" "MC2D-v${{ github.run_number }}-${apk#app-}"
+          done
+          ls -lh
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: build-android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+# ==============================================================
+# JOB 3: Create GitHub Release (on tag push)
+# ==============================================================
+  create-release:
+    name: "🚀 Publish GitHub Release"
+    runs-on: ubuntu-22.04
+    needs: [build-web, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apks
+          path: release-apks/
+
+      - name: List release files
+        run: ls -lh release-apks/
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/**
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          name: "MC2D ${{ github.ref_name }}"
+          body: |
+            ## ⛏ MC2D Engine — ${{ github.ref_name }}
+
+            **ArnabLabZ Studio**
+
+            ### 📦 Downloads
+            | Platform | ABI | File |
+            |----------|-----|------|
+            | Android | armeabi-v7a (32-bit ARM) | See below |
+            | Android | arm64-v8a (64-bit ARM) | See below |
+            | Android | x86_64 (Emulator) | See below |
+            | Android | Universal | See below |
+            | Web | WebGL1 / WASM | [Play Now](https://gamerarnabxyz.github.io/mc2d) |
+
+            ### 🎮 Features
+            - Perlin Noise infinite world generation
+            - 16×16 dynamic chunk loading/unloading  
+            - AABB pixel-perfect collision & player physics
+            - Touch virtual joystick (MD3 design)
+            - JSON-driven block definitions
+            - Zero-crash resilient texture system
+
+            *Built with Raylib + C99 | CI by GitHub Actions*
+          prerelease: false
           draft: false
+          files: release-apks/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

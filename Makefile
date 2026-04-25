@@ -1,101 +1,67 @@
-# MC Clone Game Engine - Makefile for Desktop Builds
+# MC2D Engine - Universal Makefile
+PROJECT    := mc2d
+RAYLIB_VER := 5.0
 
-# Compiler settings
-CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -O2 -Iinclude -Iinclude/core
-LDFLAGS = -lm
+SRCS := src/main.c \
+        src/world/blocks.c \
+        src/world/chunk.c \
+        src/world/worldgen.c \
+        src/player/player.c \
+        src/player/inventory.c \
+        src/renderer/textures.c \
+        src/renderer/camera.c \
+        src/ui/hud.c \
+        src/input/input.c
 
-# Raylib (adjust path as needed)
-RAYLIB_PATH = /usr/local
-RAYLIB_LIBS = -lraylib -lopengl32 -lgdi32 -lwinmm
+INCLUDES := -Isrc
 
-# Platform detection
-ifeq ($(OS),Windows_NT)
-    PLATFORM = windows
-    EXE_EXT = .exe
-else
-    ifeq ($(shell uname),Darwin)
-        PLATFORM = macos
-        EXE_EXT = .app
-    else
-        PLATFORM = linux
-        EXE_EXT =
-    endif()
-endif()
+UNAME := $(shell uname -s)
 
-# Directories
-SRC_DIR = src
-BUILD_DIR = build
-BIN_DIR = bin
+# ---- Native ----
+CC      := gcc
+CFLAGS  := -std=c99 -O2 -Wall -Wextra $(INCLUDES)
+LDFLAGS := -lraylib -lm -lpthread -ldl
 
-# Source files
-C_SOURCES = $(wildcard $(SRC_DIR)/*.c)
-C_SOURCES += $(wildcard $(SRC_DIR)/core/*.c)
+ifeq ($(UNAME), Darwin)
+    LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
+else ifeq ($(UNAME), Linux)
+    LDFLAGS += -lGL -lX11
+endif
 
-# Object files
-OBJECTS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(C_SOURCES))
+native: $(SRCS)
+	@echo ">>> Building native..."
+	$(CC) $(CFLAGS) $(SRCS) -o $(PROJECT) $(LDFLAGS)
+	@echo ">>> Done: ./$(PROJECT)"
 
-# Target executable
-TARGET = $(BIN_DIR)/mc-clone$(EXE_EXT)
+run: native
+	./$(PROJECT)
 
-# Default target
-all: directories $(TARGET)
+# ---- Web / WASM ----
+EMCC    := emcc
+WEB_OUT := web/build
 
-# Create directories
-directories:
-	@mkdir -p $(BUILD_DIR)/core
-	@mkdir -p $(BIN_DIR)
-	@mkdir -p $(BUILD_DIR)/assets
+web: $(SRCS)
+	@mkdir -p $(WEB_OUT)
+	$(EMCC) -std=c99 -O2 $(INCLUDES) \
+		-DPLATFORM_WEB \
+		-s USE_GLFW=3 -s ASYNCIFY \
+		-s TOTAL_MEMORY=134217728 -s ALLOW_MEMORY_GROWTH=1 \
+		-s WASM=1 -s MAX_WEBGL_VERSION=1 \
+		--shell-file web/shell.html \
+		--preload-file assets \
+		-lraylib \
+		$(SRCS) -o $(WEB_OUT)/index.html
+	@echo ">>> WASM done: $(WEB_OUT)/index.html"
 
-# Compile C files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+web-serve: web
+	cd $(WEB_OUT) && python3 -m http.server 8080
 
-$(BUILD_DIR)/core/%.o: $(SRC_DIR)/core/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# Link executable
-$(TARGET): $(OBJECTS)
-	$(CC) $^ -o $@ $(LDFLAGS) $(RAYLIB_LIBS)
-
-# Clean build
-clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)
-
-# Run game
-run: $(TARGET)
-	./$(TARGET)
-
-# Debug build
-debug: CFLAGS += -g -DDEBUG
-debug: all
-
-# Web build (requires Emscripten)
-web: CFLAGS = -std=c99 -Wall -O2 -s USE_WEBGL2=1 -s ALLOW_MEMORY_GROWTH=1
-web: LDFLAGS = -s WASM=1 -s USE_WEBGL2=1
-web: CC = emcc
-web: TARGET = $(BIN_DIR)/mc-clone.html
-web: all
-
-# Android build (requires Android NDK)
+# ---- Android ----
 android:
-	cd platforms/android && ./gradlew assembleDebug
+	cd build-android && ./gradlew assembleRelease
 
-# Android release
-android-release:
-	cd platforms/android && ./gradlew assembleRelease
+clean:
+	rm -f $(PROJECT)
+	rm -rf $(WEB_OUT)
 
-# Install
-install: $(TARGET)
-	install -Dm 755 $(TARGET) /usr/local/bin/mc-clone
-
-# Package for distribution
-package: clean all
-	@echo "Creating distribution package..."
-	@mkdir -p dist/mc-clone-$(GAME_VERSION)
-	@cp -r $(BIN_DIR)/* dist/mc-clone-$(GAME_VERSION)/
-	@cp -r assets dist/mc-clone-$(GAME_VERSION)/
-	@cd dist && tar -czvf mc-clone-$(GAME_VERSION).tar.gz mc-clone-$(GAME_VERSION)/
-
-.PHONY: all directories clean run debug web android android-release install package
+.PHONY: native run web web-serve android clean

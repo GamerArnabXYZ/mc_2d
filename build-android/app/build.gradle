@@ -1,0 +1,88 @@
+// build-android/app/build.gradle
+// 4 APK flavors: armeabi-v7a, arm64-v8a, x86_64, universal
+
+plugins {
+    id 'com.android.application'
+}
+
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('gradle.properties')
+if (keystoreFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystoreFile))
+}
+
+android {
+    compileSdk 34
+    ndkVersion "26.3.11579264"
+    namespace "com.gax.mc2d"
+
+    defaultConfig {
+        applicationId "com.gax.mc2d"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags ""
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile     file(keystoreProps['RELEASE_STORE_FILE'] ?: 'mc2d-release.keystore')
+            keyAlias      keystoreProps['RELEASE_KEY_ALIAS']      ?: 'mc2d'
+            storePassword keystoreProps['RELEASE_STORE_PASSWORD'] ?: 'android'
+            keyPassword   keystoreProps['RELEASE_KEY_PASSWORD']   ?: 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    // 4 ABI splits — generates 4 separate APKs
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a", "x86_64"
+            universalApk true  // 4th APK = universal
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/jni/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+    // No Java deps — pure C via JNI
+}
+
+// Rename APKs to include ABI in filename
+android.applicationVariants.all { variant ->
+    variant.outputs.each { output ->
+        def abi = output.getFilter(com.android.build.OutputFile.ABI)
+        def abiName = abi ?: "universal"
+        output.outputFileName = "MC2D-${variant.versionName}-${abiName}-${variant.buildType.name}.apk"
+    }
+}
