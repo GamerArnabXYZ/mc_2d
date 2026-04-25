@@ -1,0 +1,106 @@
+plugins {
+    id 'com.android.application'
+}
+
+def gameVersion = project.hasProperty('GAME_VERSION') ? GAME_VERSION : '1.0.0'
+def ndkVersion = project.hasProperty('NDK_VERSION') ? NDK_VERSION : 'r25b'
+
+android {
+    namespace 'com.mcclone.game'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.mcclone.game"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName gameVersion
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c99 -Wall -O2"
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    // Generate 4 APK variants
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+            universalApk true
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    externalNativeBuild {
+        cmake {
+            path '../../src/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // For touch input handling
+    implementation 'androidx.activity:activity:1.7.2'
+}
+
+def getAbiSuffix(abi) {
+    switch (abi) {
+        case 'armeabi-v7a':
+            return 'arm7'
+        case 'arm64-v8a':
+            return 'arm64'
+        case 'x86_64':
+            return 'x86_64'
+        default:
+            return 'universal'
+    }
+}
+
+// Rename APK outputs with version
+applicationVariants.all { variant ->
+    variant.outputs.all { output ->
+        def abiName = output.getFilter("ABI")
+        if (abiName != null) {
+            def suffix = getAbiSuffix(abiName)
+            output.outputFileName = "mc-clone-${gameVersion}-${suffix}.apk"
+        } else {
+            output.outputFileName = "mc-clone-${gameVersion}-universal.apk"
+        }
+    }
+}

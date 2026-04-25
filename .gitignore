@@ -1,0 +1,53 @@
+# Object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.app
+mc-clone
+
+# Build directories
+build/
+bin/
+dist/
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Debug files
+*.dSYM/
+*.pdb
+*.ilk
+
+# Android
+platforms/android/.gradle/
+platforms/android/app/build/
+platforms/android/build/
+*.apk
+*.aab
+
+# Web
+deploy/
+*.wasm
+*.data
+*.js
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+raylib/
+
+# Memory dumps
+*.dump
+core
