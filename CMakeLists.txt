@@ -19,11 +19,9 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Raylib configuration
-option(BUILD_EXAMPLES "Build examples" OFF)
-
 # Platform-specific settings
-if(WEB)
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(PLATFORM_WEB ON)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_WEBGL2=1 -s ALLOW_MEMORY_GROWTH=1")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s WASM=1")
 endif()
@@ -35,11 +33,11 @@ file(GLOB SOURCES
 )
 
 # Header files
-file(GLOB HEADERS
-    "${CMAKE_SOURCE_DIR}/include/**/*.h"
+file(GLOB_RECURSE HEADERS
+    "${CMAKE_SOURCE_DIR}/include/*.h"
 )
 
-# Include directories
+# Include directories - add to CMAKE
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/include/core
@@ -47,6 +45,12 @@ include_directories(
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+
+# Important: Set include directories on target for header resolution
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/core
+)
 
 # Link Raylib
 find_package(raylib QUIET)
@@ -71,16 +75,8 @@ install(DIRECTORY assets/ DESTINATION share/${PROJECT_NAME}/assets)
 # Debug symbols
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(MSVC)
-        target_compile_options(${PROJECT_NAME} /Zi)
+        target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
     else()
-        target_compile_options(${PROJECT_NAME} -g)
-    endif()
-endif()
-
-# Generate assembly for analysis (optional)
-if(GENERATE_ASM)
-    if(CLANG)
-        set_target_properties(${PROJECT_NAME} PROPERTIES
-            ASM_INSTRUCTIONS_FILE "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.asm")
+        target_compile_options(${PROJECT_NAME} PRIVATE -g)
     endif()
 endif()
