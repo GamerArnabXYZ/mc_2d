@@ -12,19 +12,15 @@ permissions:
   pages:    write
   id-token: write
 
-# ============================================================
-# Global env
-# ============================================================
 env:
   RAYLIB_VERSION: 5.0.0
   NDK_VERSION:    26.3.11579264
   JAVA_VERSION:   17
-  PROJECT_NAME:   mc2d
 
 jobs:
-# ==============================================================
-# JOB 1: WebAssembly Build + Deploy to gh-pages
-# ==============================================================
+# ================================================================
+# JOB 1: WebAssembly → gh-pages
+# ================================================================
   build-web:
     name: "🌐 WebAssembly (Emscripten)"
     runs-on: ubuntu-22.04
@@ -44,93 +40,87 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_VERSION }}-emscripten
+          key: raylib-${{ env.RAYLIB_VERSION }}-emscripten-v3
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          wget -q https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz
-          tar xf ${{ env.RAYLIB_VERSION }}.tar.gz
+          # FIX: curl -fL instead of wget (handles GitHub 302 redirects)
+          curl -fL -o raylib.tar.gz \
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz"
+          tar xf raylib.tar.gz
           cd raylib-${{ env.RAYLIB_VERSION }}/src
-          emmake make PLATFORM=PLATFORM_WEB -j$(nproc)
+          emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          cp libraylib.a ../../raylib-web/lib/
+          cp libraylib.a            ../../raylib-web/lib/
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
+          echo "✅ Raylib web: $(ls -lh ../../raylib-web/lib/)"
 
-      - name: Create Web Shell HTML
+      - name: Create web/shell.html
         run: |
           mkdir -p web
-          cat > web/shell.html << 'SHELL_EOF'
+          cat > web/shell.html << 'HTML_EOF'
           <!DOCTYPE html>
           <html lang="en">
           <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+            <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
             <title>MC2D — ArnabLabZ</title>
             <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { background: #1a1a2e; display: flex; flex-direction: column;
-                     align-items: center; justify-content: center; height: 100vh;
-                     font-family: monospace; color: #eee; overflow: hidden; }
-              #canvas-container { position: relative; }
-              canvas { display: block; border: 2px solid #333;
-                       image-rendering: pixelated; touch-action: none; }
-              #loading { position: absolute; inset: 0; display: flex;
-                         align-items: center; justify-content: center;
-                         background: #1a1a2e; font-size: 1.4rem; }
-              #progress-bar { width: 300px; height: 8px; background: #333;
-                              border-radius: 4px; overflow: hidden; margin-top: 16px; }
-              #progress-fill { height: 100%; background: #64c8ff;
-                               transition: width 0.3s; width: 0%; }
-              .status { text-align: center; }
+              *{margin:0;padding:0;box-sizing:border-box}
+              body{background:#1a1a2e;display:flex;align-items:center;
+                   justify-content:center;height:100vh;font-family:monospace;color:#eee;overflow:hidden}
+              canvas{display:block;image-rendering:pixelated;touch-action:none}
+              #loading{position:fixed;inset:0;display:flex;align-items:center;
+                       justify-content:center;background:#1a1a2e;z-index:99}
+              #bar{width:280px;height:8px;background:#333;border-radius:4px;overflow:hidden;margin-top:14px}
+              #fill{height:100%;background:#64c8ff;width:0%;transition:width .3s}
+              #info{margin-top:8px;font-size:.75rem;color:#888}
             </style>
           </head>
           <body>
-            <div id="canvas-container">
-              <canvas id="canvas" oncontextmenu="return false;"></canvas>
-              <div id="loading">
-                <div class="status">
-                  <div>⛏ MC2D Loading...</div>
-                  <div id="progress-bar"><div id="progress-fill"></div></div>
-                  <div id="load-text" style="margin-top:8px;font-size:0.8rem;color:#888">Initializing...</div>
-                </div>
+            <canvas id="canvas" oncontextmenu="return false"></canvas>
+            <div id="loading">
+              <div style="text-align:center">
+                <div style="font-size:1.3rem">⛏ MC2D Loading…</div>
+                <div id="bar"><div id="fill"></div></div>
+                <div id="info">Initializing…</div>
               </div>
             </div>
             <script>
-              var Module = {
-                canvas: (function() { return document.getElementById('canvas'); })(),
-                setStatus: function(text) {
-                  document.getElementById('load-text').textContent = text || 'Ready';
-                  if (!text) document.getElementById('loading').style.display = 'none';
+              var Module={
+                canvas:document.getElementById('canvas'),
+                setStatus:function(t){
+                  document.getElementById('info').textContent=t||'Ready';
+                  if(!t)document.getElementById('loading').style.display='none';
                 },
-                monitorRunDependencies: function(left) {
-                  var pct = left ? Math.max(0, 100 - left * 10) : 100;
-                  document.getElementById('progress-fill').style.width = pct + '%';
+                monitorRunDependencies:function(n){
+                  document.getElementById('fill').style.width=(n?Math.max(0,100-n*8):100)+'%';
                 },
-                onRuntimeInitialized: function() {
-                  document.getElementById('loading').style.display = 'none';
+                onRuntimeInitialized:function(){
+                  document.getElementById('loading').style.display='none';
                 }
               };
-              window.onerror = function(e) { console.error('MC2D Error:', e); };
             </script>
             {{{ SCRIPT }}}
           </body>
           </html>
-          SHELL_EOF
+          HTML_EOF
 
       - name: Build WebAssembly
         run: |
+          mkdir -p web/build
           emcc -std=c99 -O2 \
             -Isrc \
             -Iraylib-web/include \
             -DPLATFORM_WEB \
             -s USE_GLFW=3 \
-            -s ASYNCIFY \
+            -s ASYNCIFY=1 \
             -s TOTAL_MEMORY=134217728 \
             -s ALLOW_MEMORY_GROWTH=1 \
             -s WASM=1 \
-            -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
             -s MAX_WEBGL_VERSION=1 \
+            -s EXPORTED_RUNTIME_METHODS='["cwrap"]' \
             --shell-file web/shell.html \
             --preload-file assets \
             src/main.c \
@@ -140,25 +130,27 @@ jobs:
             src/player/player.c \
             src/player/inventory.c \
             src/renderer/textures.c \
+            src/renderer/camera.c \
+            src/ui/hud.c \
             src/input/input.c \
             raylib-web/lib/libraylib.a \
             -lm \
-            -o web/index.html
-          echo "✅ WASM build complete"
-          ls -lh web/
+            -o web/build/index.html
+          echo "✅ WASM build:"
+          ls -lh web/build/
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir:  ./web
+          publish_dir:  ./web/build
           publish_branch: gh-pages
-          commit_message: "🌐 Deploy MC2D Web Build"
+          commit_message: "🌐 Deploy MC2D (${{ github.sha }})"
 
-# ==============================================================
-# JOB 2: Android APK Build (4 variants)
-# ==============================================================
+# ================================================================
+# JOB 2: Android APKs (4 ABIs)
+# ================================================================
   build-android:
     name: "🤖 Android APKs (4 ABIs)"
     runs-on: ubuntu-22.04
@@ -173,102 +165,127 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Setup Android SDK + NDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK ${{ env.NDK_VERSION }}
+      - name: Install NDK
         run: |
-          sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
+          sdkmanager --install "ndk;${{ env.NDK_VERSION }}" --sdk_root=$ANDROID_SDK_ROOT
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Cache Raylib (Android ARM64)
-        id: cache-raylib-arm64
+      - name: Cache Raylib Android
+        id: cache-raylib-android
         uses: actions/cache@v4
         with:
           path: raylib-android
-          key: raylib-${{ env.RAYLIB_VERSION }}-android-ndk${{ env.NDK_VERSION }}
+          key: raylib-${{ env.RAYLIB_VERSION }}-android-ndk${{ env.NDK_VERSION }}-v3
 
-      - name: Build Raylib for Android (All ABIs)
-        if: steps.cache-raylib-arm64.outputs.cache-hit != 'true'
+      - name: Build Raylib for Android (CMake per ABI)
+        if: steps.cache-raylib-android.outputs.cache-hit != 'true'
         run: |
-          wget -q https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz
-          tar xf ${{ env.RAYLIB_VERSION }}.tar.gz
-          
+          # FIX: curl -fL handles GitHub redirects (wget exit 8 fix)
+          curl -fL -o raylib.tar.gz \
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_VERSION }}.tar.gz"
+          tar xf raylib.tar.gz
+          RAYLIB_SRC="$PWD/raylib-${{ env.RAYLIB_VERSION }}"
+
           for ABI in armeabi-v7a arm64-v8a x86_64; do
-            echo "Building Raylib for $ABI..."
-            cd raylib-${{ env.RAYLIB_VERSION }}/src
-            
-            if [ "$ABI" = "armeabi-v7a" ]; then
-              ARCH_FLAG="--target=armv7a-linux-androideabi21"
-              TOOLCHAIN="arm-linux-androideabi"
-            elif [ "$ABI" = "arm64-v8a" ]; then
-              ARCH_FLAG="--target=aarch64-linux-android21"
-              TOOLCHAIN="aarch64-linux-android"
-            elif [ "$ABI" = "x86_64" ]; then
-              ARCH_FLAG="--target=x86_64-linux-android21"
-              TOOLCHAIN="x86_64-linux-android"
-            fi
-            
-            NDK_TOOLCHAIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
-            
-            make PLATFORM=PLATFORM_ANDROID \
-              ANDROID_NDK=$NDK_HOME \
-              ANDROID_ARCH=$ABI \
-              CC="$NDK_TOOLCHAIN/clang $ARCH_FLAG" \
-              AR="$NDK_TOOLCHAIN/llvm-ar" \
-              -j$(nproc)
-            
-            mkdir -p ../../raylib-android/$ABI/lib ../../raylib-android/include
-            cp libraylib.a ../../raylib-android/$ABI/lib/
-            cp raylib.h raymath.h rlgl.h ../../raylib-android/include/
-            make clean
-            cd ../..
+            echo "=== Raylib: $ABI ==="
+            BD="$PWD/rl-build-$ABI"
+            mkdir -p "$BD"
+
+            cmake -S "$RAYLIB_SRC" -B "$BD" \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI="$ABI" \
+              -DANDROID_PLATFORM=android-21 \
+              -DANDROID_STL=c++_shared \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_EXAMPLES=OFF \
+              -DWITH_PIC=ON \
+              -DPLATFORM=Android \
+              -DGRAPHICS=GRAPHICS_API_OPENGL_ES2
+
+            cmake --build "$BD" --target raylib -j$(nproc)
+
+            mkdir -p "raylib-android/$ABI/lib" "raylib-android/include"
+            cp "$BD/raylib/libraylib.a"   "raylib-android/$ABI/lib/"
+            cp "$RAYLIB_SRC/src/raylib.h" \
+               "$RAYLIB_SRC/src/raymath.h" \
+               "$RAYLIB_SRC/src/rlgl.h"   "raylib-android/include/"
+            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/)"
           done
 
-      - name: Generate Keystore (CI use only)
+      - name: Prepare JNI sources
+        run: |
+          JNI=build-android/app/src/main/jni
+          mkdir -p "$JNI/src"
+          cp -r src/world    "$JNI/src/"
+          cp -r src/player   "$JNI/src/"
+          cp -r src/renderer "$JNI/src/"
+          cp -r src/input    "$JNI/src/"
+          cp -r src/ui       "$JNI/src/"
+          cp    src/main.c   "$JNI/src/"
+          # Put prebuilt raylib inside jni so CMakeLists can find it
+          cp -r raylib-android "$JNI/raylib-android"
+          mkdir -p build-android/app/src/main/assets
+          cp -r assets/. build-android/app/src/main/assets/ 2>/dev/null || true
+          echo "JNI tree:"
+          find "$JNI" -name "*.c" -o -name "*.h" | head -30
+
+      - name: Patch CMakeLists raylib path
+        run: |
+          # Point to local jni/raylib-android instead of ../../..
+          sed -i \
+            's|set(RAYLIB_DIR.*)|set(RAYLIB_DIR "${CMAKE_SOURCE_DIR}/raylib-android")|' \
+            build-android/app/src/main/jni/CMakeLists.txt
+          echo "CMakeLists after patch:"
+          grep -n "RAYLIB_DIR\|RAYLIB_LIB" build-android/app/src/main/jni/CMakeLists.txt
+
+      - name: Generate Keystore
         run: |
           keytool -genkeypair -v \
             -keystore build-android/mc2d-release.keystore \
-            -alias mc2d \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android \
-            -keypass android \
-            -dname "CN=MC2D,OU=ArnabLabZ,O=GAX,L=BD,ST=DH,C=BD"
+            -alias mc2d -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android123 -keypass android123 \
+            -dname "CN=MC2D,OU=ArnabLabZ,O=GAX,L=Dhaka,ST=Dhaka,C=BD"
 
-      - name: Write Gradle Signing Config
+      - name: Write gradle.properties
         run: |
-          cat >> build-android/gradle.properties << 'EOF'
+          # NO leading spaces — gradle.properties is whitespace-sensitive
+          cat > build-android/gradle.properties << 'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2048m
           RELEASE_STORE_FILE=mc2d-release.keystore
           RELEASE_KEY_ALIAS=mc2d
-          RELEASE_STORE_PASSWORD=android
-          RELEASE_KEY_PASSWORD=android
+          RELEASE_STORE_PASSWORD=android123
+          RELEASE_KEY_PASSWORD=android123
           EOF
 
-      - name: Setup Gradle build files
+      - name: Setup Gradle wrapper
+        working-directory: build-android
         run: |
-          # Copy native sources into JNI tree
-          mkdir -p build-android/app/src/main/jni/src
-          cp -r src/* build-android/app/src/main/jni/src/
-          cp -r assets build-android/app/src/main/assets/ || true
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version=8.6
+          fi
+          chmod +x gradlew
 
       - name: Build Release APKs
         working-directory: build-android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
-          echo "✅ APK build complete"
+          ./gradlew assembleRelease \
+            -Pandroid.ndkVersion=${{ env.NDK_VERSION }} \
+            --no-daemon --stacktrace
+          echo "✅ APKs:"
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
-      - name: Rename APKs clearly
+      - name: Rename APKs
         run: |
-          cd build-android/app/build/outputs/apk/release
-          # Expected: app-armeabi-v7a-release.apk etc.
-          for apk in *.apk; do
-            mv "$apk" "MC2D-v${{ github.run_number }}-${apk#app-}"
+          DIR=build-android/app/build/outputs/apk/release
+          for f in "$DIR"/*.apk; do
+            base=$(basename "$f")
+            mv "$f" "$DIR/MC2D-r${{ github.run_number }}-${base#app-}"
           done
-          ls -lh
+          ls -lh "$DIR"
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
@@ -277,54 +294,41 @@ jobs:
           path: build-android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-# ==============================================================
-# JOB 3: Create GitHub Release (on tag push)
-# ==============================================================
+# ================================================================
+# JOB 3: GitHub Release (tag push only)
+# ================================================================
   create-release:
-    name: "🚀 Publish GitHub Release"
+    name: "🚀 GitHub Release"
     runs-on: ubuntu-22.04
     needs: [build-web, build-android]
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Download APK artifacts
+      - name: Download APKs
         uses: actions/download-artifact@v4
         with:
           name: android-apks
           path: release-apks/
-
-      - name: List release files
-        run: ls -lh release-apks/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: "MC2D ${{ github.ref_name }}"
           body: |
-            ## ⛏ MC2D Engine — ${{ github.ref_name }}
+            ## ⛏ MC2D — ${{ github.ref_name }}
+            **ArnabLabZ Studio (GamerArnabXYZ)**
 
-            **ArnabLabZ Studio**
+            | Platform | ABI | Notes |
+            |----------|-----|-------|
+            | Android  | arm64-v8a | Most modern devices |
+            | Android  | armeabi-v7a | Older 32-bit ARM |
+            | Android  | x86_64 | Emulator |
+            | Android  | Universal | All ABIs bundled |
+            | Web/WASM | — | [▶ Play Now](https://gamerarnabxyz.github.io/mc_2d) |
 
-            ### 📦 Downloads
-            | Platform | ABI | File |
-            |----------|-----|------|
-            | Android | armeabi-v7a (32-bit ARM) | See below |
-            | Android | arm64-v8a (64-bit ARM) | See below |
-            | Android | x86_64 (Emulator) | See below |
-            | Android | Universal | See below |
-            | Web | WebGL1 / WASM | [Play Now](https://gamerarnabxyz.github.io/mc2d) |
-
-            ### 🎮 Features
-            - Perlin Noise infinite world generation
-            - 16×16 dynamic chunk loading/unloading  
-            - AABB pixel-perfect collision & player physics
-            - Touch virtual joystick (MD3 design)
-            - JSON-driven block definitions
-            - Zero-crash resilient texture system
-
-            *Built with Raylib + C99 | CI by GitHub Actions*
-          prerelease: false
+            **Stack:** C99 · Raylib 5.0 · Emscripten 3.1.64 · NDK 26.3
           draft: false
+          prerelease: false
           files: release-apks/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
