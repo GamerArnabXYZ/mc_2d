@@ -11,10 +11,9 @@ on:
 env:
   GAME_NAME: mc-clone
   GAME_VERSION: 1.0.0
-  NDK_VERSION: r25b
-  EMSDK_VERSION: 3.1.32
+  NDK_VERSION: r26d
+  EMSDK_VERSION: 3.1.68
   ANDROID_API: 24
-  ANDROID_BUILD_TOOLS: 33.0.2
 
 jobs:
   # ============================================
@@ -53,9 +52,10 @@ jobs:
           mkdir -p build-web
           cd build-web
 
+          # Use 'Web' not 'WEB' - Raylib uses proper capitalization
           emcmake cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
-            -DPLATFORM=WEB \
+            -DPLATFORM=Web \
             -DGAME_NAME=${{ env.GAME_NAME }}
 
           emmake make -j$(nproc)
@@ -101,27 +101,29 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Cache Android NDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Cache NDK
         id: cache-ndk
         uses: actions/cache@v4
         with:
           path: |
-            ~/android-ndk
-            ~/.android/ndk
-          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}
+            ${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}-${{ matrix.abi }}
 
       - name: Setup Android NDK
         if: steps.cache-ndk.outputs.cache-hit != 'true'
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip
-          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip -d ~/
-          rm android-ndk-${{ env.NDK_VERSION }}-linux.zip
-          echo "NDK_HOME=~/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          cd ${{ github.workspace }}/platforms/android
+          curl -sL https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip -o android-ndk.zip
+          unzip -q android-ndk.zip
+          rm android-ndk.zip
 
       - name: Configure NDK Path
         run: |
-          echo "NDK_HOME=~/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=~/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          echo "NDK_HOME=${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
       - name: Build Android - ${{ matrix.abi }}
         run: |
@@ -129,12 +131,12 @@ jobs:
 
           mkdir -p app/src/main/jniLibs/${{ matrix.abi }}
 
-          ~/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ \
+          ${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang \
             -target ${{ matrix.abi }}-linux-android24 \
-            -sysroot ~/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
-            -c ../../src/*.c ../../src/**/*.c \
+            -sysroot ${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
+            -c ../../src/core/*.c ../../src/*.c \
             -I../../include \
-            -I~/android-ndk-${{ env.NDK_VERSION }}/sysroot/usr/include \
+            -I${{ github.workspace }}/platforms/android/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include \
             -fPIC -Wall -O2 \
             -o app/src/main/jniLibs/${{ matrix.abi }}/libmc-clone.a
 
