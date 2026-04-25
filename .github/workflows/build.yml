@@ -9,7 +9,6 @@ on:
     branches: [ main ]
 
 env:
-  # Game configuration
   GAME_NAME: mc-clone
   GAME_VERSION: 1.0.0
   NDK_VERSION: r25b
@@ -31,7 +30,7 @@ jobs:
 
       - name: Cache Emscripten
         id: cache-emsdk
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/emsdk
@@ -51,20 +50,16 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cd ${{ github.workspace }}
 
-          # Create build directory
           mkdir -p build-web
           cd build-web
 
-          # Configure with CMake for Emscripten
           emcmake cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DPLATFORM=WEB \
             -DGAME_NAME=${{ env.GAME_NAME }}
 
-          # Build
           emmake make -j$(nproc)
 
-          # Package for deployment
           mkdir -p deploy
           cp index.html deploy/
           cp *.js deploy/
@@ -72,7 +67,7 @@ jobs:
           cp *.data deploy/ 2>/dev/null || true
 
       - name: Upload Web Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: web-build
           path: build-web/deploy/
@@ -100,7 +95,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -108,7 +103,7 @@ jobs:
 
       - name: Cache Android NDK
         id: cache-ndk
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/android-ndk
@@ -132,10 +127,8 @@ jobs:
         run: |
           cd ${{ github.workspace }}/platforms/android
 
-          # Create native library directory structure
           mkdir -p app/src/main/jniLibs/${{ matrix.abi }}
 
-          # Compile native C code with NDK
           ~/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ \
             -target ${{ matrix.abi }}-linux-android24 \
             -sysroot ~/android-ndk-${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
@@ -145,7 +138,6 @@ jobs:
             -fPIC -Wall -O2 \
             -o app/src/main/jniLibs/${{ matrix.abi }}/libmc-clone.a
 
-          # Build debug APK
           chmod +x gradlew
           ./gradlew assembleDebug \
             -PABI_FILTER=${{ matrix.abi }} \
@@ -158,7 +150,7 @@ jobs:
              ${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-${{ matrix.artifact_suffix }}.apk
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-apk-${{ matrix.artifact_suffix }}
           path: platforms/android/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-${{ matrix.artifact_suffix }}.apk
@@ -177,7 +169,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -190,11 +182,9 @@ jobs:
         run: |
           cd ${{ github.workspace }}/platforms/android
 
-          # Build all ABIs
           chmod +x gradlew
           ./gradlew assembleDebug
 
-          # Package universal APK with all ABIs
           mkdir -p universal
           cp app/build/outputs/apk/debug/*.apk universal/
 
@@ -205,7 +195,7 @@ jobs:
              ${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-universal.apk
 
       - name: Upload Universal APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-apk-universal
           path: platforms/android/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}-universal.apk
@@ -226,33 +216,33 @@ jobs:
 
     steps:
       - name: Download Web Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: web-build
           path: deploy
 
       - name: Configure Pages
-        uses: actions/configure-pages@v3
+        uses: actions/configure-pages@v4
 
       - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           path: deploy
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
 
       - name: Print Deployment URL
         run: |
-          echo "🎮 Game deployed to: ${{ steps.deployment.outputs.page_url }}"
+          echo "Game deployed to: ${{ steps.deployment.outputs.page_url }}"
 
   # ============================================
   # RELEASE MANAGEMENT
   # ============================================
   create-release:
     name: Create Release
-    runs-on: ubuntu-04
+    runs-on: ubuntu-22.04
     needs: [build-web, build-android, build-android-universal]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
@@ -261,13 +251,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Web Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: web-build
           path: release/web
 
       - name: Download Android Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           pattern: android-apk-*
           path: release/android
@@ -276,12 +266,10 @@ jobs:
         run: |
           mkdir -p release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}
 
-          # Copy all release files
           cp -r release/web/* release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/web/
           cp -r release/android/* release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/android/
 
-          # Create release notes
-          cat > release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/RELEASE_NOTES.md << EOF
+          cat > release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/RELEASE_NOTES.md << 'EOF'
           # ${{ env.GAME_NAME }} v${{ env.GAME_VERSION }}
 
           ## Downloads
@@ -292,17 +280,18 @@ jobs:
           - **Android Universal**: mc-clone-${{ env.GAME_VERSION }}-universal.apk
 
           ## Features
-          - ✅ Infinite procedural world
-          - ✅ WebAssembly + WebGL support
-          - ✅ Native Android builds
-          - ✅ Zero-crash texture fallback system
+          - Infinite procedural world
+          - WebAssembly + WebGL support
+          - Native Android builds
+          - Zero-crash texture fallback system
 
-          Built with ❤️ using C99 + Raylib
+          Built with C99 + Raylib
           EOF
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: release/${{ env.GAME_NAME }}-${{ env.GAME_VERSION }}/**
           generate_release_notes: true
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          draft: false
