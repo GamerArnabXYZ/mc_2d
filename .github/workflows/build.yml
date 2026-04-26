@@ -40,33 +40,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v7
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v8
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          # Raylib 6.0 release tarball URL
           curl -fL \
             "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz" \
             -o raylib.tar.gz
           tar xf raylib.tar.gz
           RDIR=$(ls -d raylib-*/ | head -1)
-          echo ">>> Source: $RDIR"
-          ls "${RDIR}src/"
+          echo "Source: $RDIR"
           cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          # Raylib 4.5 outputs libraylib.web.a, newer versions output libraylib.a
-          # Copy whichever exists and normalize the name
-          if [ -f libraylib.web.a ]; then
-            cp libraylib.web.a ../../raylib-web/lib/libraylib.a
-          elif [ -f libraylib.a ]; then
-            cp libraylib.a     ../../raylib-web/lib/libraylib.a
-          else
-            echo "ERROR: No raylib static lib found!"; ls -la; exit 1
-          fi
+          # Handle both libraylib.a and libraylib.web.a output names
+          if   [ -f libraylib.web.a ]; then cp libraylib.web.a ../../raylib-web/lib/libraylib.a
+          elif [ -f libraylib.a ];     then cp libraylib.a     ../../raylib-web/lib/libraylib.a
+          else echo "ERROR: no raylib lib found"; ls -la; exit 1; fi
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
-          echo "✅ Raylib web: $(ls -lh ../../raylib-web/lib/)"
+          echo "✅ $(ls -lh ../../raylib-web/lib/)"
 
       - name: Create web/shell.html
         run: |
@@ -161,7 +154,7 @@ jobs:
           commit_message: "🌐 MC2D Web Deploy (${{ github.sha }})"
 
 # ================================================================
-# JOB 2: Android APKs (4 ABIs)
+# JOB 2: Android APKs — FetchContent approach (official raylib)
 # ================================================================
   build-android:
     name: "🤖 Android APKs (4 ABIs)"
@@ -185,50 +178,13 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" --sdk_root=$ANDROID_SDK_ROOT
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Cache Raylib Android
-        id: cache-raylib-android
+      # FetchContent will download raylib automatically during cmake configure.
+      # Cache the downloaded source so repeated runs are faster.
+      - name: Cache Raylib FetchContent download
         uses: actions/cache@v4
         with:
-          path: raylib-android
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v8
-
-      - name: Build Raylib for Android
-        if: steps.cache-raylib-android.outputs.cache-hit != 'true'
-        run: |
-          curl -fL \
-            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz" \
-            -o raylib.tar.gz
-          tar xf raylib.tar.gz
-          RAYLIB_SRC=$(ls -d "$PWD"/raylib-*/ | head -1)
-          RAYLIB_SRC="${RAYLIB_SRC%/}"
-          echo ">>> Raylib src: $RAYLIB_SRC"
-
-          for ABI in armeabi-v7a arm64-v8a x86_64; do
-            echo "=== $ABI ==="
-            BD="$PWD/rl-build-$ABI"
-            mkdir -p "$BD"
-
-            cmake -S "$RAYLIB_SRC" -B "$BD" \
-              -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
-              -DANDROID_ABI="$ABI" \
-              -DANDROID_PLATFORM=android-21 \
-              -DANDROID_STL=c++_shared \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_C_FLAGS="-DSTBIR_NO_HALF_FLOAT" \
-              -DBUILD_EXAMPLES=OFF \
-              -DWITH_PIC=ON \
-              -DPLATFORM=Android \
-              -DGRAPHICS=GRAPHICS_API_OPENGL_ES2
-
-            cmake --build "$BD" --target raylib -j$(nproc)
-
-            mkdir -p "raylib-android/$ABI/lib" "raylib-android/include"
-            cp "$BD/raylib/libraylib.a"    "raylib-android/$ABI/lib/"
-            cp "$RAYLIB_SRC/src/raylib.h"  "raylib-android/include/"
-            cp "$RAYLIB_SRC/src/raymath.h" "raylib-android/include/"
-            cp "$RAYLIB_SRC/src/rlgl.h"    "raylib-android/include/"
-            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/libraylib.a)"
-          done
+          path: build-android/app/src/main/jni/_deps
+          key: raylib-fetchcontent-${{ env.RAYLIB_TAG }}-v1
 
       - name: Prepare JNI sources
         run: |
@@ -240,9 +196,10 @@ jobs:
           cp -r src/input    "$JNI/src/"
           cp -r src/ui       "$JNI/src/"
           cp    src/main.c   "$JNI/src/"
-          cp -r raylib-android "$JNI/raylib-android"
           mkdir -p build-android/app/src/main/assets
           cp -r assets/. build-android/app/src/main/assets/ 2>/dev/null || true
+          echo "Sources ready:"
+          find "$JNI/src" -name "*.c" | head -20
 
       - name: Generate Keystore
         run: |
@@ -273,6 +230,9 @@ jobs:
 
       - name: Build Release APKs
         working-directory: build-android
+        env:
+          # FetchContent needs internet access during configure
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           ./gradlew assembleRelease \
             -Pandroid.ndkVersion=${{ env.NDK_VERSION }} \
