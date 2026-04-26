@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v8
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v9
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
@@ -54,10 +54,9 @@ jobs:
           cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          # Handle both libraylib.a and libraylib.web.a output names
           if   [ -f libraylib.web.a ]; then cp libraylib.web.a ../../raylib-web/lib/libraylib.a
           elif [ -f libraylib.a ];     then cp libraylib.a     ../../raylib-web/lib/libraylib.a
-          else echo "ERROR: no raylib lib found"; ls -la; exit 1; fi
+          else echo "ERROR: no raylib lib"; ls -la; exit 1; fi
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
           echo "✅ $(ls -lh ../../raylib-web/lib/)"
 
@@ -141,7 +140,7 @@ jobs:
             raylib-web/lib/libraylib.a \
             -lm \
             -o web/build/index.html
-          echo "✅ WASM:"
+          echo "✅ WASM build:"
           ls -lh web/build/
 
       - name: Deploy to GitHub Pages
@@ -154,7 +153,9 @@ jobs:
           commit_message: "🌐 MC2D Web Deploy (${{ github.sha }})"
 
 # ================================================================
-# JOB 2: Android APKs — FetchContent approach (official raylib)
+# JOB 2: Android APKs — ClassiCube-style build
+# No FetchContent, No CMake for Raylib
+# Raylib compiled directly with NDK clang, .a placed in jni tree
 # ================================================================
   build-android:
     name: "🤖 Android APKs (4 ABIs)"
@@ -178,18 +179,70 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" --sdk_root=$ANDROID_SDK_ROOT
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
-      - name: Install CMake 3.28
-        run: |
-          sdkmanager --install "cmake;3.28.0" --sdk_root=$ANDROID_SDK_ROOT
-          echo "CMAKE_PATH=$ANDROID_SDK_ROOT/cmake/3.28.0/bin" >> $GITHUB_ENV
-
-      # FetchContent will download raylib automatically during cmake configure.
-      # Cache the downloaded source so repeated runs are faster.
-      - name: Cache Raylib FetchContent download
+      - name: Cache Raylib Android prebuilt
+        id: cache-raylib-android
         uses: actions/cache@v4
         with:
-          path: build-android/app/src/main/jni/_deps
-          key: raylib-fetchcontent-${{ env.RAYLIB_TAG }}-v1
+          path: raylib-prebuilt
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v1
+
+      - name: Build Raylib for Android (NDK clang direct — no CMake)
+        if: steps.cache-raylib-android.outputs.cache-hit != 'true'
+        run: |
+          # Download Raylib source
+          curl -fL \
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz" \
+            -o raylib.tar.gz
+          tar xf raylib.tar.gz
+          RAYLIB_SRC=$(ls -d "$PWD"/raylib-*/ | head -1)
+          RAYLIB_SRC="${RAYLIB_SRC%/}"
+          echo "Raylib source: $RAYLIB_SRC"
+
+          NDK_TC=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          SYSROOT=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot
+
+          # Raylib source files needed for Android (from official Makefile.Android pattern)
+          RAYLIB_C_FILES="rcore.c rshapes.c rtextures.c rtext.c rmodels.c raudio.c"
+
+          mkdir -p raylib-prebuilt/include
+          cp "$RAYLIB_SRC/src/raylib.h" \
+             "$RAYLIB_SRC/src/raymath.h" \
+             "$RAYLIB_SRC/src/rlgl.h"   \
+             raylib-prebuilt/include/
+
+          for ABI in armeabi-v7a arm64-v8a x86_64; do
+            echo "=== Compiling Raylib for $ABI ==="
+            mkdir -p "raylib-prebuilt/$ABI"
+            OBJ_DIR="raylib-prebuilt/$ABI/obj"
+            mkdir -p "$OBJ_DIR"
+
+            # Pick correct clang target (same as Makefile.Android)
+            case "$ABI" in
+              armeabi-v7a) CC="$NDK_TC/armv7a-linux-androideabi21-clang"  ;;
+              arm64-v8a)   CC="$NDK_TC/aarch64-linux-android21-clang"     ;;
+              x86_64)      CC="$NDK_TC/x86_64-linux-android21-clang"      ;;
+            esac
+
+            CFLAGS="-std=c99 -O2 -fPIC -ffunction-sections -fdata-sections \
+              -DANDROID -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 \
+              -D__ANDROID_API__=21 \
+              -I$RAYLIB_SRC/src \
+              -I$RAYLIB_SRC/src/external/glfw/include \
+              --sysroot=$SYSROOT"
+
+            OBJS=""
+            for CF in $RAYLIB_C_FILES; do
+              OBJ="$OBJ_DIR/${CF%.c}.o"
+              echo "  Compiling $CF..."
+              $CC $CFLAGS -c "$RAYLIB_SRC/src/$CF" -o "$OBJ"
+              OBJS="$OBJS $OBJ"
+            done
+
+            # Archive into static lib
+            AR="$NDK_TC/llvm-ar"
+            $AR rcs "raylib-prebuilt/$ABI/libraylib.a" $OBJS
+            echo "✅ $ABI: $(ls -lh raylib-prebuilt/$ABI/libraylib.a)"
+          done
 
       - name: Prepare JNI sources
         run: |
@@ -201,10 +254,17 @@ jobs:
           cp -r src/input    "$JNI/src/"
           cp -r src/ui       "$JNI/src/"
           cp    src/main.c   "$JNI/src/"
+
+          # Copy prebuilt raylib into jni tree (CMakeLists expects it here)
+          cp -r raylib-prebuilt "$JNI/raylib-prebuilt"
+
           mkdir -p build-android/app/src/main/assets
           cp -r assets/. build-android/app/src/main/assets/ 2>/dev/null || true
-          echo "Sources ready:"
-          find "$JNI/src" -name "*.c" | head -20
+
+          echo "JNI tree:"
+          find "$JNI" -name "*.c" | sort
+          echo "Raylib libs:"
+          find "$JNI/raylib-prebuilt" -name "*.a" -exec ls -lh {} \;
 
       - name: Generate Keystore
         run: |
@@ -235,9 +295,6 @@ jobs:
 
       - name: Build Release APKs
         working-directory: build-android
-        env:
-          # FetchContent needs internet access during configure
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           ./gradlew assembleRelease \
             -Pandroid.ndkVersion=${{ env.NDK_VERSION }} \
