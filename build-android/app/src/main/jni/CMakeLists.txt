@@ -34,19 +34,16 @@ target_compile_options(mc2d PRIVATE
     -O2 -ffunction-sections -fdata-sections -Wall
 )
 
-# FIX: Raylib 6.0 uses __wrap_fopen internally (linker wrap mechanism)
-# We must pass --wrap=fopen so linker provides __real_fopen automatically
+# Raylib 6.0 Android: __wrap_fopen is defined INSIDE libraylib.a itself.
+# We must NOT pass --wrap flags from outside — that causes __wrap_* undefined errors.
+# Instead: link raylib FIRST, allow-multiple-definition for any overlap,
+# and use --whole-archive so all symbols from raylib are pulled in.
 target_link_libraries(mc2d
+    -Wl,--whole-archive
     ${RAYLIB_LIB}
+    -Wl,--no-whole-archive
     android log EGL GLESv2 OpenSLES m
-    -Wl,--wrap=fopen
-    -Wl,--wrap=fclose
-    -Wl,--wrap=fread
-    -Wl,--wrap=fwrite
-    -Wl,--wrap=fseek
-    -Wl,--wrap=ftell
-    -Wl,--wrap=feof
-    -Wl,--wrap=fgets
+    -Wl,--allow-multiple-definition
 )
 
 set_target_properties(mc2d PROPERTIES
