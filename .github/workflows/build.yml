@@ -13,10 +13,10 @@ permissions:
   id-token: write
 
 env:
-  # Correct tag: raylib uses "5.0" not "5.0.0"
-  RAYLIB_TAG:     "5.0"
-  NDK_VERSION:    "26.3.11579264"
-  JAVA_VERSION:   "17"
+  # 4.5 is stable with NDK 26 (5.0 has stb_image_resize2 FP16 NEON bug)
+  RAYLIB_TAG:   "4.5"
+  NDK_VERSION:  "26.3.11579264"
+  JAVA_VERSION: "17"
 
 jobs:
 # ================================================================
@@ -36,27 +36,25 @@ jobs:
           version: 3.1.64
           actions-cache-folder: emsdk-cache
 
-      - name: Cache Raylib Web build
+      - name: Cache Raylib Web
         id: cache-raylib-web
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v4
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v5
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          # FIXED: correct tag is "5.0" not "5.0.0"
           curl -fL -o raylib.tar.gz \
             "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
           tar xf raylib.tar.gz
-          # Folder extracted as raylib-5.0/
-          ls -d raylib-*/
           RDIR=$(ls -d raylib-*/ | head -1)
+          echo "Source dir: $RDIR"
           cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          cp libraylib.a              ../../raylib-web/lib/
+          cp libraylib.a               ../../raylib-web/lib/
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
           echo "✅ Raylib web: $(ls -lh ../../raylib-web/lib/)"
 
@@ -140,7 +138,7 @@ jobs:
             raylib-web/lib/libraylib.a \
             -lm \
             -o web/build/index.html
-          echo "✅ WASM build:"
+          echo "✅ WASM:"
           ls -lh web/build/
 
       - name: Deploy to GitHub Pages
@@ -150,7 +148,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir:  ./web/build
           publish_branch: gh-pages
-          commit_message: "🌐 Deploy MC2D (${{ github.sha }})"
+          commit_message: "🌐 MC2D Web Deploy (${{ github.sha }})"
 
 # ================================================================
 # JOB 2: Android APKs (4 ABIs)
@@ -182,30 +180,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-android
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v4
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v5
 
-      - name: Build Raylib for Android (CMake)
+      - name: Build Raylib for Android
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
         run: |
-          # FIXED: correct tag "5.0" not "5.0.0"
           curl -fL -o raylib.tar.gz \
             "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
           tar xf raylib.tar.gz
           RAYLIB_SRC=$(ls -d "$PWD"/raylib-*/ | head -1)
           RAYLIB_SRC="${RAYLIB_SRC%/}"
-          echo "Raylib source: $RAYLIB_SRC"
+          echo "Raylib src: $RAYLIB_SRC"
 
           for ABI in armeabi-v7a arm64-v8a x86_64; do
-            echo "=== Building Raylib: $ABI ==="
+            echo "=== $ABI ==="
             BD="$PWD/rl-build-$ABI"
             mkdir -p "$BD"
 
+            # FIX: STBIR_NO_HALF_FLOAT disables broken FP16 NEON in stb_image_resize2
+            # This is the root cause of the NDK 26 + Raylib 5.0 compile error
             cmake -S "$RAYLIB_SRC" -B "$BD" \
               -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
               -DANDROID_ABI="$ABI" \
               -DANDROID_PLATFORM=android-21 \
               -DANDROID_STL=c++_shared \
               -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_FLAGS="-DSTBIR_NO_HALF_FLOAT" \
               -DBUILD_EXAMPLES=OFF \
               -DWITH_PIC=ON \
               -DPLATFORM=Android \
@@ -214,11 +214,11 @@ jobs:
             cmake --build "$BD" --target raylib -j$(nproc)
 
             mkdir -p "raylib-android/$ABI/lib" "raylib-android/include"
-            cp "$BD/raylib/libraylib.a"        "raylib-android/$ABI/lib/"
-            cp "$RAYLIB_SRC/src/raylib.h"      "raylib-android/include/"
-            cp "$RAYLIB_SRC/src/raymath.h"     "raylib-android/include/"
-            cp "$RAYLIB_SRC/src/rlgl.h"        "raylib-android/include/"
-            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/libraylib.a)"
+            cp "$BD/raylib/libraylib.a"    "raylib-android/$ABI/lib/"
+            cp "$RAYLIB_SRC/src/raylib.h"  "raylib-android/include/"
+            cp "$RAYLIB_SRC/src/raymath.h" "raylib-android/include/"
+            cp "$RAYLIB_SRC/src/rlgl.h"    "raylib-android/include/"
+            echo "✅ $ABI done"
           done
 
       - name: Prepare JNI sources
@@ -287,7 +287,7 @@ jobs:
           retention-days: 30
 
 # ================================================================
-# JOB 3: GitHub Release (tag push only)
+# JOB 3: GitHub Release (tag only)
 # ================================================================
   create-release:
     name: "🚀 GitHub Release"
@@ -315,7 +315,7 @@ jobs:
             | Android  | arm64-v8a | Most modern devices |
             | Android  | armeabi-v7a | Older 32-bit ARM |
             | Android  | x86_64 | Emulator |
-            | Android  | Universal | All ABIs bundled |
+            | Android  | Universal | All ABIs |
             | Web/WASM | — | [▶ Play Now](https://gamerarnabxyz.github.io/mc_2d) |
 
             **Stack:** C99 · Raylib ${{ env.RAYLIB_TAG }} · Emscripten 3.1.64 · NDK 26.3

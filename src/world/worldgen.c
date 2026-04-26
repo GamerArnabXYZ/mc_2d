@@ -3,6 +3,7 @@
 
 #include "worldgen.h"
 #include "chunk.h"
+#include <stdlib.h>   /* abs() */
 #include "blocks.h"
 #include <math.h>
 #include <string.h>
