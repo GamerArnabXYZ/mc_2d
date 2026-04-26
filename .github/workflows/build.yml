@@ -281,6 +281,7 @@ jobs:
       - name: Build Release APKs
         working-directory: build-android
         run: |
+          chmod +x gradlew
           ./gradlew assembleRelease \
             -Pandroid.ndkVersion=${{ env.NDK_VERSION }} \
             --no-daemon --stacktrace
