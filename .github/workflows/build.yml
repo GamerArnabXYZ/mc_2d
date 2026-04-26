@@ -56,7 +56,15 @@ jobs:
           cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
-          cp libraylib.a               ../../raylib-web/lib/
+          # Raylib 4.5 outputs libraylib.web.a, newer versions output libraylib.a
+          # Copy whichever exists and normalize the name
+          if [ -f libraylib.web.a ]; then
+            cp libraylib.web.a ../../raylib-web/lib/libraylib.a
+          elif [ -f libraylib.a ]; then
+            cp libraylib.a     ../../raylib-web/lib/libraylib.a
+          else
+            echo "ERROR: No raylib static lib found!"; ls -la; exit 1
+          fi
           cp raylib.h raymath.h rlgl.h ../../raylib-web/include/
           echo "✅ Raylib web: $(ls -lh ../../raylib-web/lib/)"
 

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- AndroidManifest.xml — MC2D NativeActivity -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.gax.mc2d"
     android:versionCode="1"
     android:versionName="1.0.0">
 

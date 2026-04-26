@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 // hud.h - HUD: Hotbar, Health, Mining Progress, Day/Night, Crosshair
 // Material Design 3 aesthetics — touch-perfect sizing
 

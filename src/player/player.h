@@ -1,6 +1,7 @@
 #pragma once
 // player.h - Player Entity: AABB Collision, Gravity, State Machine
 
+#include <stdint.h>
 #include <stdbool.h>
 
 // ============================================================
