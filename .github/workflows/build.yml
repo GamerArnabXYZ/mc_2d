@@ -178,6 +178,11 @@ jobs:
           sdkmanager --install "ndk;${{ env.NDK_VERSION }}" --sdk_root=$ANDROID_SDK_ROOT
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
+      - name: Install CMake 3.28
+        run: |
+          sdkmanager --install "cmake;3.28.0" --sdk_root=$ANDROID_SDK_ROOT
+          echo "CMAKE_PATH=$ANDROID_SDK_ROOT/cmake/3.28.0/bin" >> $GITHUB_ENV
+
       # FetchContent will download raylib automatically during cmake configure.
       # Cache the downloaded source so repeated runs are faster.
       - name: Cache Raylib FetchContent download
