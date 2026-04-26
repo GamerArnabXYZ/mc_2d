@@ -184,7 +184,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-prebuilt
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v1
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v2
 
       - name: Build Raylib for Android (NDK clang direct — no CMake)
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
@@ -223,12 +223,8 @@ jobs:
               x86_64)      CC="$NDK_TC/x86_64-linux-android21-clang"      ;;
             esac
 
-            CFLAGS="-std=c99 -O2 -fPIC -ffunction-sections -fdata-sections \
-              -DANDROID -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 \
-              -D__ANDROID_API__=21 \
-              -I$RAYLIB_SRC/src \
-              -I$RAYLIB_SRC/src/external/glfw/include \
-              --sysroot=$SYSROOT"
+            NATIVE_GLUE="$NDK_HOME/sources/android/native_app_glue"
+            CFLAGS="-std=c99 -O2 -fPIC -ffunction-sections -fdata-sections -DANDROID -DPLATFORM_ANDROID -DGRAPHICS_API_OPENGL_ES2 -I$RAYLIB_SRC/src -I$RAYLIB_SRC/src/external/glfw/include -I$NATIVE_GLUE --sysroot=$SYSROOT"
 
             OBJS=""
             for CF in $RAYLIB_C_FILES; do
