@@ -13,8 +13,7 @@ permissions:
   id-token: write
 
 env:
-  # 4.5 is stable with NDK 26 (5.0 has stb_image_resize2 FP16 NEON bug)
-  RAYLIB_TAG:   "4.5"
+  RAYLIB_TAG:   "6.0"
   NDK_VERSION:  "26.3.11579264"
   JAVA_VERSION: "17"
 
@@ -41,16 +40,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v5
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v6
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
         run: |
-          curl -fL -o raylib.tar.gz \
-            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
+          # Raylib 6.0 release tarball URL
+          curl -fL \
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz" \
+            -o raylib.tar.gz
           tar xf raylib.tar.gz
           RDIR=$(ls -d raylib-*/ | head -1)
-          echo "Source dir: $RDIR"
+          echo ">>> Source: $RDIR"
+          ls "${RDIR}src/"
           cd "${RDIR}src"
           emmake make PLATFORM=PLATFORM_WEB RAYLIB_LIBTYPE=STATIC -j$(nproc)
           mkdir -p ../../raylib-web/lib ../../raylib-web/include
@@ -180,25 +182,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-android
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v5
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v6
 
       - name: Build Raylib for Android
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
         run: |
-          curl -fL -o raylib.tar.gz \
-            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz"
+          curl -fL \
+            "https://github.com/raysan5/raylib/archive/refs/tags/${{ env.RAYLIB_TAG }}.tar.gz" \
+            -o raylib.tar.gz
           tar xf raylib.tar.gz
           RAYLIB_SRC=$(ls -d "$PWD"/raylib-*/ | head -1)
           RAYLIB_SRC="${RAYLIB_SRC%/}"
-          echo "Raylib src: $RAYLIB_SRC"
+          echo ">>> Raylib src: $RAYLIB_SRC"
 
           for ABI in armeabi-v7a arm64-v8a x86_64; do
             echo "=== $ABI ==="
             BD="$PWD/rl-build-$ABI"
             mkdir -p "$BD"
 
-            # FIX: STBIR_NO_HALF_FLOAT disables broken FP16 NEON in stb_image_resize2
-            # This is the root cause of the NDK 26 + Raylib 5.0 compile error
             cmake -S "$RAYLIB_SRC" -B "$BD" \
               -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
               -DANDROID_ABI="$ABI" \
@@ -218,7 +219,7 @@ jobs:
             cp "$RAYLIB_SRC/src/raylib.h"  "raylib-android/include/"
             cp "$RAYLIB_SRC/src/raymath.h" "raylib-android/include/"
             cp "$RAYLIB_SRC/src/rlgl.h"    "raylib-android/include/"
-            echo "✅ $ABI done"
+            echo "✅ $ABI: $(ls -lh raylib-android/$ABI/lib/libraylib.a)"
           done
 
       - name: Prepare JNI sources
