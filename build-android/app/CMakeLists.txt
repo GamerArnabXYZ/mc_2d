@@ -1,9 +1,6 @@
-# MC2D Android Build — Based on ClassiCube Android CMakeLists pattern
-# cmake_minimum_required stays same as ClassiCube (3.4.1) — proven working
-
 cmake_minimum_required(VERSION 3.4.1)
 
-# Raylib prebuilt .a placed by CI in jni/raylib-prebuilt/
+# Raylib prebuilt static lib
 set(RAYLIB_LIB "${CMAKE_SOURCE_DIR}/raylib-prebuilt/${ANDROID_ABI}/libraylib.a")
 set(RAYLIB_INC "${CMAKE_SOURCE_DIR}/raylib-prebuilt/include")
 
@@ -20,27 +17,21 @@ add_library(mc2d SHARED
     src/input/input.c
 )
 
-target_include_directories(mc2d PRIVATE
-    src
-    ${RAYLIB_INC}
-)
+target_include_directories(mc2d PRIVATE src ${RAYLIB_INC})
 
 target_compile_definitions(mc2d PRIVATE
     PLATFORM_ANDROID
     GRAPHICS_API_OPENGL_ES2
 )
 
-target_compile_options(mc2d PRIVATE
-    -O2 -ffunction-sections -fdata-sections -Wall
-)
+target_compile_options(mc2d PRIVATE -O2 -Wall -ffunction-sections -fdata-sections)
 
-# ClassiCube style: minimal system libs
+# KEY FIX:
+# --whole-archive forces ALL .o from libraylib.a to be linked (no gc-sections exclusion)
+# -u ANativeActivity_onCreate forces the Android entry point symbol
+# This ensures rcore.o (which defines android_fopen, TraceLog, MemAlloc etc) is included
 target_link_libraries(mc2d
-    ${RAYLIB_LIB}
-    EGL
-    GLESv2
-    OpenSLES
-    android
-    log
-    m
+    -Wl,--whole-archive ${RAYLIB_LIB} -Wl,--no-whole-archive
+    -u ANativeActivity_onCreate
+    EGL GLESv2 OpenSLES android log m
 )

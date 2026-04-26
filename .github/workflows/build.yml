@@ -184,7 +184,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-prebuilt
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v4
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v5
 
       - name: Build Raylib for Android (NDK clang direct — no CMake)
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
@@ -202,6 +202,7 @@ jobs:
           SYSROOT=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
           # Raylib source files needed for Android (from official Makefile.Android pattern)
+          NATIVE_GLUE_C="$NDK_HOME/sources/android/native_app_glue/android_native_app_glue.c"
           RAYLIB_C_FILES="rcore.c rshapes.c rtextures.c rtext.c rmodels.c raudio.c"
 
           mkdir -p raylib-prebuilt/include
@@ -236,7 +237,10 @@ jobs:
 
             # Archive into static lib
             AR="$NDK_TC/llvm-ar"
-            $AR rcs "raylib-prebuilt/$ABI/libraylib.a" $OBJS
+            # Also compile native_app_glue (needed by rcore_android.c)
+            GLUE_OBJ="$OBJ_DIR/android_native_app_glue.o"
+            $CC $CFLAGS -c "$NATIVE_GLUE_C" -o "$GLUE_OBJ"
+            $AR rcs "raylib-prebuilt/$ABI/libraylib.a" $OBJS $GLUE_OBJ
             echo "✅ $ABI: $(ls -lh raylib-prebuilt/$ABI/libraylib.a)"
           done
 
