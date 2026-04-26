@@ -1,4 +1,5 @@
 // inventory.c
+#include <stdint.h>
 #include "inventory.h"
 #include <string.h>
 

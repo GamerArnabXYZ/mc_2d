@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v6
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v7
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
@@ -190,7 +190,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-android
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v6
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-v7
 
       - name: Build Raylib for Android
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'

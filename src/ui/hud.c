@@ -1,4 +1,5 @@
 // hud.c - HUD Rendering: MD3 Design, Touch-Perfect Sizing
+#include <stdint.h>
 #include "hud.h"
 #include "../renderer/textures.h"
 #include "../world/blocks.h"

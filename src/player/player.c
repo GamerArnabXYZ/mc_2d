@@ -1,4 +1,5 @@
 // player.c - Player Physics, AABB Collision, State Machine
+#include <stdint.h>
 #include "player.h"
 #include "../world/chunk.h"
 #include "../world/blocks.h"

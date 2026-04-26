@@ -1,4 +1,5 @@
 // blocks.c - Block Registry Implementation
+#include <stdint.h>
 #include "blocks.h"
 #include <stdio.h>
 #include <string.h>

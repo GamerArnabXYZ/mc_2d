@@ -15,7 +15,6 @@ set(MC2D_SRCS
     src/input/input.c
 )
 
-# CI patches this line to: ${CMAKE_SOURCE_DIR}/raylib-android
 set(RAYLIB_DIR "${CMAKE_SOURCE_DIR}/raylib-android")
 set(RAYLIB_LIB "${RAYLIB_DIR}/${ANDROID_ABI}/lib/libraylib.a")
 
@@ -31,13 +30,25 @@ target_compile_definitions(mc2d PRIVATE
     GRAPHICS_API_OPENGL_ES2
 )
 
-target_compile_options(mc2d PRIVATE -O2 -ffunction-sections -fdata-sections -Wall)
+target_compile_options(mc2d PRIVATE
+    -O2 -ffunction-sections -fdata-sections -Wall
+)
 
+# FIX: Raylib 6.0 uses __wrap_fopen internally (linker wrap mechanism)
+# We must pass --wrap=fopen so linker provides __real_fopen automatically
 target_link_libraries(mc2d
     ${RAYLIB_LIB}
     android log EGL GLESv2 OpenSLES m
+    -Wl,--wrap=fopen
+    -Wl,--wrap=fclose
+    -Wl,--wrap=fread
+    -Wl,--wrap=fwrite
+    -Wl,--wrap=fseek
+    -Wl,--wrap=ftell
+    -Wl,--wrap=feof
+    -Wl,--wrap=fgets
 )
 
 set_target_properties(mc2d PROPERTIES
-    LINK_FLAGS "-Wl,--gc-sections -Wl,-s"
+    LINK_FLAGS "-Wl,--gc-sections"
 )

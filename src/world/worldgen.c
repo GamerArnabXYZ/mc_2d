@@ -1,6 +1,7 @@
 // worldgen.c - Perlin Noise World Generation
 // Self-contained C99 implementation, no external noise library needed
 
+#include <stdint.h>
 #include "worldgen.h"
 #include "chunk.h"
 #include <stdlib.h>   /* abs() */

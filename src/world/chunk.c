@@ -1,4 +1,5 @@
 // chunk.c - Chunk Manager with Pool Allocator & LRU Eviction
+#include <stdint.h>
 #include "chunk.h"
 #include "worldgen.h"
 #include <string.h>

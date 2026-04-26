@@ -1,4 +1,5 @@
 // camera.c - 2D Camera: Smooth Follow + Screen Shake
+#include <stdint.h>
 #include "camera.h"
 #include <math.h>
 #include <string.h>

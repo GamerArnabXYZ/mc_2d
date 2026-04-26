@@ -1,6 +1,7 @@
 // main.c - MC2D Engine Entry Point (v2 — camera + hud integrated)
 // C99 | Raylib | Desktop · Web (Emscripten) · Android
 
+#include <stdint.h>
 #include "raylib.h"
 #include "world/blocks.h"
 #include "world/chunk.h"

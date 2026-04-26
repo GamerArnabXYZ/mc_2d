@@ -2,6 +2,7 @@
 // If atlas.png is missing/corrupt, generates procedural fallback textures in VRAM
 // Zero file dependency at runtime — works on any platform
 
+#include <stdint.h>
 #include "textures.h"
 #include <string.h>
 #include <stdio.h>
