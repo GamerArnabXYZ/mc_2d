@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 env:
-  RAYLIB_TAG:   "6.0"
+  RAYLIB_TAG:   "5.5"
   NDK_VERSION:  "26.3.11579264"
   JAVA_VERSION: "17"
 
@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-web
-          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v9
+          key: raylib-${{ env.RAYLIB_TAG }}-emscripten-v10
 
       - name: Build Raylib for Web
         if: steps.cache-raylib-web.outputs.cache-hit != 'true'
@@ -184,7 +184,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: raylib-prebuilt
-          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v3
+          key: raylib-${{ env.RAYLIB_TAG }}-android-ndk${{ env.NDK_VERSION }}-classicube-v4
 
       - name: Build Raylib for Android (NDK clang direct — no CMake)
         if: steps.cache-raylib-android.outputs.cache-hit != 'true'
