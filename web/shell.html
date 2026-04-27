@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MC2D - ArnabLabZ Studio</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: monospace;
+    color: #fff;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  #canvas-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas#canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    image-rendering: pixelated;
+    touch-action: none;
+  }
+  #loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center;
+    z-index: 10;
+  }
+  #loading h2 { font-size: 2em; color: #ffdc32; margin-bottom: 12px; }
+  #progress   { width: 280px; height: 12px; background: #222;
+                border-radius: 6px; overflow: hidden; margin: 0 auto; }
+  #bar        { height: 100%; background: linear-gradient(90deg,#3ca85a,#50e878);
+                width: 0%; transition: width 0.2s; border-radius: 6px; }
+  #status     { margin-top: 10px; font-size: 0.85em; color: #aaa; }
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <div id="loading">
+    <h2>MC2D</h2>
+    <div id="progress"><div id="bar"></div></div>
+    <div id="status">Loading...</div>
+  </div>
+  <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+</div>
+
+<script>
+  var Module = {
+    canvas: (function() { return document.getElementById('canvas'); })(),
+    setStatus: function(text) {
+      if (!text) {
+        document.getElementById('loading').style.display = 'none';
+        return;
+      }
+      var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+      if (m) {
+        var pct = parseInt(m[2]) / parseInt(m[4]) * 100;
+        document.getElementById('bar').style.width = pct + '%';
+      }
+      document.getElementById('status').textContent = text;
+    },
+    totalDependencies: 0,
+    monitorRunDependencies: function(left) {
+      this.totalDependencies = Math.max(this.totalDependencies, left);
+      var pct = left ? (100 - left / this.totalDependencies * 100) : 100;
+      document.getElementById('bar').style.width = pct + '%';
+    }
+  };
+
+  /* Resize canvas to fill window */
+  function resizeCanvas() {
+    var c = document.getElementById('canvas');
+    c.width  = window.innerWidth;
+    c.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  /* Prevent mobile scroll / zoom during gameplay */
+  document.addEventListener('touchmove', function(e){ e.preventDefault(); },
+                            { passive: false });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
