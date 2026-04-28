@@ -1,0 +1,5 @@
+# local.properties — auto-generated, do not commit
+# For GitHub Actions this is set via environment variable
+# For local builds: set your Android SDK path here
+# sdk.dir=/home/username/Android/Sdk
+# ndk.dir=/home/username/Android/Sdk/ndk/25.2.9519653

@@ -1,0 +1,220 @@
+#include "InputManager.h"
+#include <cmath>
+#include <cstdlib>
+
+InputManager::InputManager()
+    : m_moveX(0), m_jump(false)
+    , m_breaking(false), m_placed(false)
+    , m_targetSX(WINDOW_W/2), m_targetSY(WINDOW_H/2)
+    , m_openInv(false), m_slotScroll(0), m_hotbarDirect(-1)
+    , m_quit(false)
+    , m_joyFingerID(-1), m_joyBaseX(0), m_joyBaseY(0)
+    , m_joyStickX(0), m_joyStickY(0)
+    , m_actionFingerID(-1), m_actionStartX(0), m_actionStartY(0)
+    , m_actionDownTime(0)
+    , m_keyLeft(false), m_keyRight(false), m_keyJump(false)
+    , m_mouseBreak(false), m_mouseX(WINDOW_W/2), m_mouseY(WINDOW_H/2)
+{}
+
+bool InputManager::processEvents() {
+    // Reset per-frame flags
+    m_jump       = false;
+    m_placed     = false;
+    m_openInv    = false;
+    m_slotScroll = 0;
+    m_hotbarDirect = -1;
+
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+        switch (e.type) {
+            case SDL_QUIT:
+                m_quit = true;
+                return false;
+
+            case SDL_KEYDOWN:
+                handleKeyDown((SDL_Keycode)e.key.keysym.sym);
+                break;
+            case SDL_KEYUP:
+                handleKeyUp((SDL_Keycode)e.key.keysym.sym);
+                break;
+
+            case SDL_MOUSEBUTTONDOWN:
+                handleMouse(e.button, true);
+                break;
+            case SDL_MOUSEBUTTONUP:
+                handleMouse(e.button, false);
+                break;
+            case SDL_MOUSEMOTION:
+                handleMouseMotion(e.motion);
+                break;
+            case SDL_MOUSEWHEEL:
+                handleScroll(e.wheel.y);
+                break;
+
+            case SDL_FINGERDOWN:
+                handleTouch(e.tfinger, true, false);
+                break;
+            case SDL_FINGERUP:
+                handleTouch(e.tfinger, false, false);
+                break;
+            case SDL_FINGERMOTION:
+                handleTouch(e.tfinger, false, true);
+                break;
+
+            default: break;
+        }
+    }
+
+    updateFromKeyboard();
+    return true;
+}
+
+// ─── Keyboard ─────────────────────────────────────────────────────────────────
+void InputManager::handleKeyDown(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_a: case SDLK_LEFT:  m_keyLeft  = true;  break;
+        case SDLK_d: case SDLK_RIGHT: m_keyRight = true;  break;
+        case SDLK_w: case SDLK_UP:
+        case SDLK_SPACE:              m_keyJump  = true; m_jump = true; break;
+        case SDLK_e:                  m_openInv  = true;  break;
+        case SDLK_ESCAPE:             m_quit     = true;  break;
+        // Number keys 1-9 select hotbar
+        case SDLK_1: m_hotbarDirect = 0; break;
+        case SDLK_2: m_hotbarDirect = 1; break;
+        case SDLK_3: m_hotbarDirect = 2; break;
+        case SDLK_4: m_hotbarDirect = 3; break;
+        case SDLK_5: m_hotbarDirect = 4; break;
+        case SDLK_6: m_hotbarDirect = 5; break;
+        case SDLK_7: m_hotbarDirect = 6; break;
+        case SDLK_8: m_hotbarDirect = 7; break;
+        case SDLK_9: m_hotbarDirect = 8; break;
+        default: break;
+    }
+}
+
+void InputManager::handleKeyUp(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_a: case SDLK_LEFT:  m_keyLeft  = false; break;
+        case SDLK_d: case SDLK_RIGHT: m_keyRight = false; break;
+        case SDLK_w: case SDLK_UP:
+        case SDLK_SPACE:              m_keyJump  = false; break;
+        default: break;
+    }
+}
+
+void InputManager::updateFromKeyboard() {
+    // Desktop mouse: breaking = left button held, place = right button click
+    m_breaking  = m_mouseBreak;
+    m_targetSX  = m_mouseX;
+    m_targetSY  = m_mouseY;
+
+    if (m_keyLeft && !m_keyRight)       m_moveX = -MOVE_SPEED;
+    else if (m_keyRight && !m_keyLeft)  m_moveX =  MOVE_SPEED;
+    else                                m_moveX =  0.0f;
+}
+
+void InputManager::handleScroll(int delta) {
+    m_slotScroll = -delta; // negative = scroll right
+}
+
+// ─── Mouse ────────────────────────────────────────────────────────────────────
+void InputManager::handleMouse(const SDL_MouseButtonEvent& e, bool down) {
+    m_mouseX = e.x;
+    m_mouseY = e.y;
+    if (e.button == SDL_BUTTON_LEFT)  m_mouseBreak = down;
+    if (e.button == SDL_BUTTON_RIGHT && down) m_placed = true;
+}
+
+void InputManager::handleMouseMotion(const SDL_MouseMotionEvent& e) {
+    m_mouseX = e.x;
+    m_mouseY = e.y;
+}
+
+// ─── Touch ────────────────────────────────────────────────────────────────────
+// Screen layout:
+//   Left 40%  → joystick (move + jump)
+//   Right 60% → action zone (break/place)
+//   Top-right corner → inventory button
+void InputManager::handleTouch(const SDL_TouchFingerEvent& e, bool down, bool motion) {
+    // SDL finger coords are 0..1 normalized, convert to pixels
+    float fx = e.x * WINDOW_W;
+    float fy = e.y * WINDOW_H;
+
+    // ── Inventory button (top-right 60px square) ──────────────────────────────
+    if (down && fx > WINDOW_W - 70 && fy < 70) {
+        m_openInv = true;
+        return;
+    }
+
+    // ── Left side = joystick ───────────────────────────────────────────────────
+    if (down && fx < WINDOW_W * 0.4f) {
+        if (m_joyFingerID == -1) {
+            m_joyFingerID = e.fingerId;
+            m_joyBaseX    = fx;
+            m_joyBaseY    = fy;
+            m_joyStickX   = fx;
+            m_joyStickY   = fy;
+        }
+        return;
+    }
+
+    if (motion && e.fingerId == m_joyFingerID) {
+        m_joyStickX = fx;
+        m_joyStickY = fy;
+        float dx = fx - m_joyBaseX;
+        float dy = fy - m_joyBaseY;
+        float dist = sqrtf(dx * dx + dy * dy);
+        // Clamp to joystick radius
+        if (dist > TOUCH_JOYSTICK_R) {
+            dx = dx / dist * TOUCH_JOYSTICK_R;
+            dy = dy / dist * TOUCH_JOYSTICK_R;
+        }
+        // X axis → move
+        m_moveX = (dx / TOUCH_JOYSTICK_R) * MOVE_SPEED;
+        // Y axis → jump if swipe up > 40% radius
+        if (dy < -TOUCH_JOYSTICK_R * 0.4f) {
+            m_jump = true;
+        }
+        return;
+    }
+
+    if (!down && e.fingerId == m_joyFingerID) {
+        m_joyFingerID = -1;
+        m_moveX       = 0.0f;
+        return;
+    }
+
+    // ── Right side = action zone ───────────────────────────────────────────────
+    if (down && fx >= WINDOW_W * 0.4f) {
+        if (m_actionFingerID == -1) {
+            m_actionFingerID = e.fingerId;
+            m_actionStartX   = fx;
+            m_actionStartY   = fy;
+            m_actionDownTime = SDL_GetTicks();
+            // Target = touch point on right side
+            m_targetSX = (int)fx;
+            m_targetSY = (int)fy;
+            m_breaking = true;
+        }
+        return;
+    }
+
+    if (motion && e.fingerId == m_actionFingerID) {
+        m_targetSX = (int)fx;
+        m_targetSY = (int)fy;
+        return;
+    }
+
+    if (!down && e.fingerId == m_actionFingerID) {
+        m_actionFingerID = -1;
+        m_breaking       = false;
+        // Short tap = place block
+        Uint32 held = SDL_GetTicks() - m_actionDownTime;
+        if (held < 200) {
+            m_placed   = true;
+            m_targetSX = (int)m_actionStartX;
+            m_targetSY = (int)m_actionStartY;
+        }
+        return;
+    }
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.craftsdl.game">
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+
+    <application
+        android:label="CraftSDL"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:hardwareAccelerated="true">
+
+        <!-- SDL2 main activity -->
+        <activity
+            android:name="org.libsdl.app.SDLActivity"
+            android:label="CraftSDL"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|keyboard|orientation|screenSize|screenLayout"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

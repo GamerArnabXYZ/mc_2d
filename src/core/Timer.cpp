@@ -1,21 +1,35 @@
-#include "core/Timer.hpp"
+#include "Timer.h"
+#include "../core/Config.h"
 
-#include <SDL.h>
-
-namespace mc2d {
-
-Timer::Timer() : m_prevCounter(SDL_GetPerformanceCounter()), m_deltaSeconds(0.016f), m_frameMs(16) {}
+Timer::Timer()
+    : m_prev(SDL_GetPerformanceCounter())
+    , m_freq(SDL_GetPerformanceFrequency())
+    , m_delta(0.0f)
+    , m_fps(0.0f)
+    , m_fpsAccum(0.0f)
+    , m_fpsFrames(0)
+{}
 
 void Timer::tick() {
-  const std::uint64_t now = SDL_GetPerformanceCounter();
-  const std::uint64_t freq = SDL_GetPerformanceFrequency();
-  const double delta = static_cast<double>(now - m_prevCounter) / static_cast<double>(freq);
-  m_deltaSeconds = static_cast<float>(delta);
-  m_frameMs = static_cast<std::uint32_t>(delta * 1000.0);
-  m_prevCounter = now;
+    Uint64 now   = SDL_GetPerformanceCounter();
+    float  raw   = (float)(now - m_prev) / (float)m_freq;
+    m_prev       = now;
+
+    // Cap delta to avoid physics explosion after lag spike
+    m_delta = (raw > 0.05f) ? 0.05f : raw;
+
+    // FPS counter (update every second)
+    m_fpsAccum += m_delta;
+    m_fpsFrames++;
+    if (m_fpsAccum >= 1.0f) {
+        m_fps       = (float)m_fpsFrames / m_fpsAccum;
+        m_fpsAccum  = 0.0f;
+        m_fpsFrames = 0;
+    }
 }
 
-float Timer::deltaSeconds() const { return m_deltaSeconds; }
-std::uint32_t Timer::frameTimeMs() const { return m_frameMs; }
-
-}  // namespace mc2d
+float   Timer::getDelta()   const { return m_delta; }
+float   Timer::getFPS()     const { return m_fps; }
+Uint64  Timer::getTotalMs() const {
+    return (SDL_GetPerformanceCounter() * 1000ULL) / m_freq;
+}

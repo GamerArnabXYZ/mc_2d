@@ -1,0 +1,94 @@
+name: Build Web (WASM) + Deploy
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Emscripten SDK ────────────────────────────────────────────────────
+      - name: Cache Emscripten SDK
+        uses: actions/cache@v4
+        id: emsdk-cache
+        with:
+          path: emsdk
+          key: emsdk-3.1.51
+
+      - name: Install Emscripten
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install 3.1.51
+          ./emsdk activate 3.1.51
+
+      - name: Activate Emscripten
+        run: |
+          source emsdk/emsdk_env.sh
+          echo "EMSDK=$GITHUB_WORKSPACE/emsdk" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/emsdk/upstream/emscripten" >> $GITHUB_PATH
+
+
+      # ── Generate placeholder atlas if not present ─────────────────────────
+      - name: Generate texture atlas
+        run: |
+          pip install Pillow -q
+          python3 tools/gen_atlas.py assets/textures/atlas.png
+
+      # ── Configure + Build ─────────────────────────────────────────────────
+      - name: Configure CMake (Emscripten)
+        run: |
+          source emsdk/emsdk_env.sh
+          mkdir -p build-web
+          emcmake cmake -S . -B build-web \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=67108864 -s USE_SDL=2 -s USE_SDL_IMAGE=2 -s SDL2_IMAGE_FORMATS=[\"png\"] -s USE_SDL_TTF=2 --preload-file assets --shell-file web/shell.html -O2" \
+            --no-warn-unused-cli
+
+      - name: Build WASM
+        run: |
+          source emsdk/emsdk_env.sh
+          emmake cmake --build build-web --config Release -j$(nproc)
+
+      # ── Package web output ────────────────────────────────────────────────
+      - name: Package web output
+        run: |
+          mkdir -p web-dist
+          # CraftSDL.html is the entry; .js and .wasm are alongside it
+          for f in build-web/CraftSDL.*; do cp "$f" web-dist/ 2>/dev/null || true; done
+          # data file if preloaded assets exist
+          # data file copied above
+          # HTML shell (Emscripten writes final index.html)
+          [ -f build-web/CraftSDL.html ] && cp build-web/CraftSDL.html web-dist/index.html ||
+            cp web/shell.html web-dist/index.html
+          # Fix script tag in index.html if needed
+          sed -i 's|{{{ SCRIPT }}}|<script src="CraftSDL.js"></script>|g' web-dist/index.html
+
+      # ── Upload web artifact ───────────────────────────────────────────────
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CraftSDL-web
+          path: web-dist/
+          retention-days: 30
+
+      # ── Deploy to `web` branch ────────────────────────────────────────────
+      - name: Deploy to web branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: web
+          publish_dir: web-dist
+          force_orphan: true
+          commit_message: "Deploy web build [skip ci]"

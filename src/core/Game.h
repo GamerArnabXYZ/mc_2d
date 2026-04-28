@@ -1,0 +1,40 @@
+#pragma once
+#include <SDL2/SDL.h>
+#include "../core/Timer.h"
+#include "../world/World.h"
+#include "../player/Player.h"
+#include "../renderer/Renderer.h"
+#include "../renderer/Camera.h"
+#include "../input/InputManager.h"
+#include "../save/SaveManager.h"
+#include "../ui/CraftingUI.h"
+
+// ─── Game ─────────────────────────────────────────────────────────────────────
+// Owns everything. Single entry point from main().
+class Game {
+public:
+    Game();
+    ~Game();
+
+    bool init();     // SDL init, window creation, load assets
+    void run();      // Main loop (blocking until quit)
+    void shutdown(); // Cleanup
+
+private:
+    SDL_Window*   m_win;
+    Timer         m_timer;
+    World         m_world;
+    Player        m_player;
+    Renderer      m_renderer;
+    Camera        m_camera;
+    InputManager  m_input;
+    SaveManager   m_save;
+    CraftingUI    m_craftUI;
+
+    bool          m_running;
+    float         m_saveTimer; // auto-save every 60s
+
+    void update(float dt);
+    void processInput();
+    void autoSave(float dt);
+};

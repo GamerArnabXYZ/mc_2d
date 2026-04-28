@@ -1,0 +1,36 @@
+# Build outputs
+build/
+build-*/
+*.o
+*.a
+*.so
+*.out
+
+# Android
+android/.gradle/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+
+# Emscripten / Web
+*.js.map
+CraftSDL.js
+CraftSDL.wasm
+CraftSDL.data
+web-dist/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# deps (downloaded by CI)
+deps/
+emsdk/
+
+# Save data (local only)
+save/
+
+# macOS
+.DS_Store
