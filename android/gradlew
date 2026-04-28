@@ -1,6 +1,0 @@
-#!/bin/sh
-# Gradle wrapper bootstrap script
-# Run: gradle wrapper --gradle-version 8.2 (once, on any machine with Gradle)
-# OR the GitHub Actions workflow installs Gradle automatically.
-
-exec gradle "$@"
