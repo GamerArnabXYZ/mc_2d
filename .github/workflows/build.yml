@@ -1,0 +1,99 @@
+name: Build mc_2d
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build-desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev ninja-build zip
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Package zip
+        run: |
+          mkdir -p dist
+          cp build/mc2d dist/
+          cp -r assets dist/assets
+          (cd dist && zip -r ../mc2d-desktop.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mc2d-desktop
+          path: mc2d-desktop.zip
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Configure web
+        run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+      - name: Build web
+        run: cmake --build build-web
+      - name: Stage web artifact
+        run: |
+          mkdir -p web-dist
+          cp web/index.html web-dist/index.html
+          cp build-web/mc2d.html web-dist/mc2d.html || true
+          cp build-web/mc2d.js web-dist/
+          cp build-web/mc2d.wasm web-dist/
+          cp -r assets web-dist/assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mc2d-web
+          path: web-dist
+      - name: Push prebuilt web branch
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git checkout --orphan web
+          git rm -rf .
+          cp -r web-dist/* .
+          touch .nojekyll
+          git add .
+          git commit -m "Update web build ${GITHUB_SHA}" || true
+          git push -f origin web
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+      - name: Build native Android lib
+        run: |
+          cmake -S . -B build-android \
+            -DANDROID_ABI=armeabi-v7a \
+            -DANDROID_PLATFORM=android-21 \
+            -DANDROID_NDK=$ANDROID_NDK_ROOT \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mc2d-android-native
+          path: build-android
+
+  release-bundle:
+    runs-on: ubuntu-latest
+    needs: [build-desktop, build-web, build-android]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create final zip
+        run: |
+          zip -r mc2d-full-project.zip artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mc2d-full-project
+          path: mc2d-full-project.zip
