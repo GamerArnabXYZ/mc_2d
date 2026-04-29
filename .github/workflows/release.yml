@@ -54,6 +54,27 @@ jobs:
           mkdir -p android/app/src/main/java
           cp -r deps/SDL2/android-project/app/src/main/java/. android/app/src/main/java/
 
+      - name: Generate launcher icons
+        run: |
+          pip install Pillow -q
+          python3 - << 'ICONEOF'
+from PIL import Image, ImageDraw
+import os
+sizes = {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
+base = 'android/app/src/main/res'
+for folder, size in sizes.items():
+    path = f'{base}/{folder}/ic_launcher.png'
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    m = size // 8
+    draw.rounded_rectangle([m, m, size-m, size-m], radius=size//5, fill=(76, 153, 0, 255))
+    cx, cy, t = size//2, size//2, max(2, size//16)
+    draw.rectangle([cx-t, cy-size//3, cx+t, cy+size//3], fill=(255,255,255,255))
+    draw.rectangle([cx-size//3, cy-t, cx+size//3, cy+t], fill=(255,255,255,255))
+    img.save(path, 'PNG')
+ICONEOF
+
       - name: Generate texture atlas
         run: pip install Pillow -q && python3 tools/gen_atlas.py assets/textures/atlas.png
 

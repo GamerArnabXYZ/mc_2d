@@ -1,12 +1,12 @@
 # ─── Emscripten (WebAssembly) ─────────────────────────────────────────────────
+# SOURCES and SRC_INCLUDE_DIR set in root CMakeLists.txt via CMAKE_SOURCE_DIR
 message(STATUS "Building for Web (Emscripten)")
+message(STATUS "Sources: ${SOURCES}")
 
-# SOURCES and SRC_INCLUDE_DIR are set in root CMakeLists.txt
 add_executable(CraftSDL ${SOURCES})
 
 target_include_directories(CraftSDL PRIVATE ${SRC_INCLUDE_DIR})
 
-# Compile flags: SDL2/image/ttf via Emscripten ports (no system install needed)
 target_compile_options(CraftSDL PRIVATE
     -O2
     "SHELL:-s USE_SDL=2"
@@ -14,7 +14,6 @@ target_compile_options(CraftSDL PRIVATE
     "SHELL:-s USE_SDL_TTF=2"
 )
 
-# Link flags
 target_link_options(CraftSDL PRIVATE
     -O2
     "SHELL:-s USE_SDL=2"
@@ -27,9 +26,8 @@ target_link_options(CraftSDL PRIVATE
     "SHELL:-s STACK_SIZE=1048576"
     "SHELL:-s ENVIRONMENT=web"
     "SHELL:-s ASSERTIONS=0"
-    "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets"
-    "SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+    "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/assets"
+    "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
 )
 
-# Emscripten outputs: CraftSDL.html + CraftSDL.js + CraftSDL.wasm [+ CraftSDL.data]
 set_target_properties(CraftSDL PROPERTIES SUFFIX ".html")

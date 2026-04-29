@@ -19,14 +19,10 @@ target_link_libraries(CraftSDL PRIVATE
     m
 )
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(CraftSDL PRIVATE -O2 -DNDEBUG)
-endif()
+target_compile_options(CraftSDL PRIVATE -O2)
 
-# Copy assets next to binary after build
 add_custom_command(TARGET CraftSDL POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:CraftSDL>/assets
+        ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:CraftSDL>/assets
     COMMENT "Copying assets..."
 )

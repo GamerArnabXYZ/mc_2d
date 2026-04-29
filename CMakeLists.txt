@@ -4,31 +4,34 @@ project(CraftSDL VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ─── Source files (absolute paths — works from any build dir) ─────────────────
+# CMAKE_SOURCE_DIR = always the root dir where cmake was invoked (-S .)
+# This is safe across include() calls unlike CMAKE_CURRENT_SOURCE_DIR
+set(ROOT ${CMAKE_SOURCE_DIR})
+
+# ─── All source files ─────────────────────────────────────────────────────────
 set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Game.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Timer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/world/World.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/world/WorldGen.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/player/Player.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/player/Inventory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/Renderer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/TextureAtlas.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/Camera.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/input/InputManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/save/SaveManager.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CraftingUI.cpp
+    ${ROOT}/src/main.cpp
+    ${ROOT}/src/core/Game.cpp
+    ${ROOT}/src/core/Timer.cpp
+    ${ROOT}/src/world/World.cpp
+    ${ROOT}/src/world/WorldGen.cpp
+    ${ROOT}/src/player/Player.cpp
+    ${ROOT}/src/player/Inventory.cpp
+    ${ROOT}/src/renderer/Renderer.cpp
+    ${ROOT}/src/renderer/TextureAtlas.cpp
+    ${ROOT}/src/renderer/Camera.cpp
+    ${ROOT}/src/input/InputManager.cpp
+    ${ROOT}/src/save/SaveManager.cpp
+    ${ROOT}/src/ui/CraftingUI.cpp
 )
 
-# ─── Include dir (also absolute) ─────────────────────────────────────────────
-set(SRC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(SRC_INCLUDE_DIR ${ROOT}/src)
 
 # ─── Platform detection ───────────────────────────────────────────────────────
 if(EMSCRIPTEN)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emscripten.cmake)
+    include(${ROOT}/cmake/Emscripten.cmake)
 elseif(ANDROID)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Android.cmake)
+    include(${ROOT}/cmake/Android.cmake)
 else()
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Desktop.cmake)
+    include(${ROOT}/cmake/Desktop.cmake)
 endif()
