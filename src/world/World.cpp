@@ -25,12 +25,16 @@ void World::ensureChunksAround(int centerCX) {
         shiftChunks(newOffset);
     }
 
-    // Generate any empty/uninitialized chunks
+    // Generate/Load any empty/uninitialized chunks
     for (int i = 0; i < WORLD_CHUNKS; i++) {
         Chunk& c = m_chunks[i];
         int    cx = m_chunkOffset + i;
-        if (c.chunkX != cx || c.blocks[0][0] == 0) {
-            m_gen.generateChunk(c, cx);
+        if (c.chunkX != cx || c.dirty) { // c.dirty or uninitialized
+            if (!m_saveDir.empty() && loadChunk(c, cx, m_saveDir)) {
+                // loaded from disk
+            } else {
+                m_gen.generateChunk(c, cx);
+            }
         }
     }
 }
@@ -40,29 +44,50 @@ void World::shiftChunks(int newOffset) {
     int shift = newOffset - m_chunkOffset;
 
     if (abs(shift) >= WORLD_CHUNKS) {
-        // Complete reload
+        // Complete reload: save all current, then load/gen new
+        if (!m_saveDir.empty()) {
+            for (auto& c : m_chunks) saveChunk(c, m_saveDir);
+        }
         m_chunkOffset = newOffset;
         for (int i = 0; i < WORLD_CHUNKS; i++) {
-            m_gen.generateChunk(m_chunks[i], m_chunkOffset + i);
+            int cx = m_chunkOffset + i;
+            if (m_saveDir.empty() || !loadChunk(m_chunks[i], cx, m_saveDir)) {
+                m_gen.generateChunk(m_chunks[i], cx);
+            }
         }
         return;
     }
 
     if (shift > 0) {
         // Shift left: drop first `shift` chunks, generate new ones at end
+        if (!m_saveDir.empty()) {
+            for (int i = 0; i < shift; i++) saveChunk(m_chunks[i], m_saveDir);
+        }
         for (int i = 0; i < WORLD_CHUNKS - shift; i++)
             m_chunks[i] = m_chunks[i + shift];
         m_chunkOffset = newOffset;
-        for (int i = WORLD_CHUNKS - shift; i < WORLD_CHUNKS; i++)
-            m_gen.generateChunk(m_chunks[i], m_chunkOffset + i);
+        for (int i = WORLD_CHUNKS - shift; i < WORLD_CHUNKS; i++) {
+            int cx = m_chunkOffset + i;
+            if (m_saveDir.empty() || !loadChunk(m_chunks[i], cx, m_saveDir)) {
+                m_gen.generateChunk(m_chunks[i], cx);
+            }
+        }
     } else {
         // Shift right
         shift = -shift;
+        if (!m_saveDir.empty()) {
+            for (int i = WORLD_CHUNKS - 1; i >= WORLD_CHUNKS - shift; i--)
+                saveChunk(m_chunks[i], m_saveDir);
+        }
         for (int i = WORLD_CHUNKS - 1; i >= shift; i--)
             m_chunks[i] = m_chunks[i - shift];
         m_chunkOffset = newOffset;
-        for (int i = 0; i < shift; i++)
-            m_gen.generateChunk(m_chunks[i], m_chunkOffset + i);
+        for (int i = 0; i < shift; i++) {
+            int cx = m_chunkOffset + i;
+            if (m_saveDir.empty() || !loadChunk(m_chunks[i], cx, m_saveDir)) {
+                m_gen.generateChunk(m_chunks[i], cx);
+            }
+        }
     }
 }
 
@@ -121,12 +146,26 @@ void World::loadAll(const std::string& dir) {
 }
 
 bool World::saveChunk(const Chunk& c, const std::string& dir) {
-    char path[256];
+    char path[256], tmpPath[256];
     snprintf(path, sizeof(path), "%s/chunk_%d.bin", dir.c_str(), c.chunkX);
-    FILE* f = fopen(path, "wb");
+    snprintf(tmpPath, sizeof(tmpPath), "%s/chunk_%d.bin.tmp", dir.c_str(), c.chunkX);
+    
+    FILE* f = fopen(tmpPath, "wb");
     if (!f) return false;
-    fwrite(c.blocks, 1, sizeof(c.blocks), f);
+    if (fwrite(c.blocks, 1, sizeof(c.blocks), f) != sizeof(c.blocks)) {
+        fclose(f);
+        remove(tmpPath);
+        return false;
+    }
     fclose(f);
+    
+#ifdef _WIN32
+    remove(path); // Windows rename doesn't overwrite
+#endif
+    if (rename(tmpPath, path) != 0) {
+        remove(tmpPath);
+        return false;
+    }
     return true;
 }
 

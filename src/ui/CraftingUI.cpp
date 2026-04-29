@@ -62,7 +62,7 @@ int CraftingUI::slotAt(int px, int py, const Inventory& inv) const {
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
-void CraftingUI::render(SDL_Renderer* rend, TextureAtlas& atlas, Inventory& inv) {
+void CraftingUI::render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory& inv) {
     // Center panel
     m_panelX = (WINDOW_W - PANEL_W) / 2;
     m_panelY = (WINDOW_H - PANEL_H) / 2;

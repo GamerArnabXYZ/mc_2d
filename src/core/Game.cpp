@@ -1,15 +1,6 @@
 #include "Game.h"
 #include "Config.h"
-#if __has_include(<SDL2/SDL_image.h>)
-  #include <SDL2/SDL_image.h>
-#elif __has_include(<SDL_image.h>)
-  #include <SDL_image.h>
-#endif
-#if __has_include(<SDL2/SDL_ttf.h>)
-  #include <SDL2/SDL_ttf.h>
-#elif __has_include(<SDL_ttf.h>)
-  #include <SDL_ttf.h>
-#endif
+#include "SDL_incl.h"
 #include <cmath>
 #include <cstdio>
 
@@ -61,6 +52,8 @@ bool Game::init() {
         SDL_Log("Renderer init failed");
         return false;
     }
+
+    m_world.setSaveDir(SAVE_DIR);
 
     // Generate initial world
     m_world.ensureChunksAround(WORLD_CHUNKS / 2);
@@ -121,9 +114,21 @@ void Game::tickFrame() {
 
 // ─── processInput ─────────────────────────────────────────────────────────────
 void Game::processInput() {
+    if (m_input.openInventory()) m_player.toggleInventory();
+
+    if (m_player.inventory().isOpen()) {
+        m_player.setMoveX(0);
+        m_player.stopBreak();
+
+        // Pass clicks to Crafting UI
+        if (m_input.placedThisFrame()) {
+            m_craftUI.handleClick(m_input.targetScreenX(), m_input.targetScreenY(), false, m_player.inventory());
+        }
+        return;
+    }
+
     m_player.setMoveX(m_input.moveX());
     if (m_input.jumpPressed()) m_player.jump();
-    if (m_input.openInventory()) m_player.toggleInventory();
 
     int scroll = m_input.slotScroll();
     if (scroll != 0) m_player.scrollSlot(scroll);

@@ -14,6 +14,7 @@ public:
     ~World();
 
     // ── Chunk management ──────────────────────────────────────────────────────
+    void      setSaveDir(const std::string& dir) { m_saveDir = dir; }
     void      ensureChunksAround(int centerChunkX); // load/gen chunks near player
     Chunk*    getChunk(int cx);                      // nullptr if not loaded
 

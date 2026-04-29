@@ -11,7 +11,7 @@ public:
     CraftingUI();
 
     // Call every frame when inventory is open
-    void render(SDL_Renderer* rend, TextureAtlas& atlas, Inventory& inv);
+    void render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory& inv);
 
     // Returns true if event was consumed (tap on a slot etc.)
     bool handleTouch(float fx, float fy, bool down, Inventory& inv);

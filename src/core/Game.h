@@ -1,5 +1,5 @@
 #pragma once
-#include <SDL2/SDL.h>
+#include "SDL_incl.h"
 #include "../core/Timer.h"
 #include "../world/World.h"
 #include "../player/Player.h"

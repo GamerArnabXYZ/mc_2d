@@ -45,7 +45,7 @@ bool Player::solidAt(float px, float py, const World& w) const {
 // ─── X-axis collision ─────────────────────────────────────────────────────────
 void Player::resolveX(float dx, const World& w) {
     float nx   = m_x + dx;
-    float testX = (dx > 0) ? (nx + PLAYER_W - 0.5f) : (nx + 0.5f);
+    float testX = (dx > 0) ? (nx + PLAYER_W - 1.0f) : (nx + 1.0f);
     float ys[3] = { m_y + 2, m_y + PLAYER_H * 0.5f, m_y + PLAYER_H - 2 };
 
     bool blocked = false;
@@ -57,9 +57,9 @@ void Player::resolveX(float dx, const World& w) {
     } else {
         m_velX = 0;
         if (dx > 0) {
-            m_x = floorf((m_x + PLAYER_W) / BLOCK_SIZE) * BLOCK_SIZE - PLAYER_W - 0.5f;
+            m_x = floorf((m_x + PLAYER_W) / BLOCK_SIZE) * BLOCK_SIZE - PLAYER_W - 1.0f;
         } else {
-            m_x = floorf(m_x / BLOCK_SIZE) * BLOCK_SIZE + BLOCK_SIZE + 0.5f;
+            m_x = floorf(m_x / BLOCK_SIZE) * BLOCK_SIZE + BLOCK_SIZE + 1.0f;
         }
     }
 }
@@ -68,7 +68,7 @@ void Player::resolveX(float dx, const World& w) {
 void Player::resolveY(float dy, const World& w) {
     float ny   = m_y + dy;
     bool  down = (dy > 0);
-    float testY = down ? (ny + PLAYER_H - 0.5f) : (ny + 0.5f);
+    float testY = down ? (ny + PLAYER_H - 1.0f) : (ny + 1.0f);
     float xs[3] = { m_x + 2, m_x + PLAYER_W * 0.5f, m_x + PLAYER_W - 2 };
 
     bool blocked = false;
@@ -81,10 +81,10 @@ void Player::resolveY(float dy, const World& w) {
     } else {
         m_velY = 0;
         if (down) {
-            m_y = floorf((m_y + PLAYER_H) / BLOCK_SIZE) * BLOCK_SIZE - PLAYER_H - 0.5f;
+            m_y = floorf((m_y + PLAYER_H) / BLOCK_SIZE) * BLOCK_SIZE - PLAYER_H - 1.0f;
             m_onGround = true;
         } else {
-            m_y = floorf(m_y / BLOCK_SIZE) * BLOCK_SIZE + BLOCK_SIZE + 0.5f;
+            m_y = floorf(m_y / BLOCK_SIZE) * BLOCK_SIZE + BLOCK_SIZE + 1.0f;
         }
     }
 }

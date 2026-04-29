@@ -30,7 +30,8 @@ public:
     const ItemStack& hotbarSlot(int i) const   { return m_hotbar[i]; }
     ItemStack&       invSlot   (int i)         { return m_inv[i]; }
     const ItemStack& invSlot   (int i) const   { return m_inv[i]; }
-    ItemStack& heldItem  ()        { return m_hotbar[m_selected]; }
+    ItemStack&       heldItem  ()        { return m_hotbar[m_selected]; }
+    const ItemStack& heldItem  () const  { return m_hotbar[m_selected]; }
     int        selected  () const  { return m_selected; }
     bool       isOpenConst() const  { return m_open; }
     void       setSelected(int i)  { m_selected = i % HOTBAR_SLOTS; }

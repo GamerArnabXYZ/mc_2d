@@ -67,14 +67,18 @@ void InputManager::handleKeyUp(SDL_Keycode key) {
 }
 
 void InputManager::updateFromKeyboard() {
-    if (m_keyLeft && !m_keyRight)      m_moveX = -MOVE_SPEED;
-    else if (m_keyRight && !m_keyLeft) m_moveX =  MOVE_SPEED;
-    else if (!m_joyFingerID == -1)     {} // touch controls moveX already set
-    else if (m_joyFingerID == -1)      m_moveX = 0.0f; // no touch, no keys
+    // Only use keyboard movement if no touch joystick is active
+    if (m_joyFingerID == -1) {
+        if (m_keyLeft && !m_keyRight)      m_moveX = -MOVE_SPEED;
+        else if (m_keyRight && !m_keyLeft) m_moveX =  MOVE_SPEED;
+        else                               m_moveX = 0.0f;
+    }
 
-    m_breaking = m_mouseBreak;
-    m_targetSX = m_mouseX;
-    m_targetSY = m_mouseY;
+    m_breaking = m_mouseBreak || (m_actionFingerID != -1);
+    if (!m_breaking && m_joyFingerID == -1) {
+        m_targetSX = m_mouseX;
+        m_targetSY = m_mouseY;
+    }
 }
 
 void InputManager::handleScroll(int delta) { m_slotScroll = -delta; }

@@ -26,6 +26,7 @@ enum BlockID : uint8_t {
     BLOCK_SNOW,       // 20
     BLOCK_ICE,        // 21
     BLOCK_CACTUS,     // 22
+    ITEM_STICK,       // 23
     BLOCK_COUNT       // keep last
 };
 
@@ -74,6 +75,7 @@ static const BlockDef BLOCK_DEFS[BLOCK_COUNT] = {
     {"Snow",         2, 1,  2,  1, true,  false, false, 0.2f, 255 }, // SNOW
     {"Ice",          3, 1,  3,  1, true,  true,  false, 0.5f, 20  }, // ICE
     {"Cactus",       4, 1,  4,  1, false, true,  false, 0.4f, 255 }, // CACTUS
+    {"Stick",        8, 1,  8,  1, false, true,  false, 0.0f, 255 }, // STICK
 };
 
 // ─── Inline helpers ───────────────────────────────────────────────────────────
