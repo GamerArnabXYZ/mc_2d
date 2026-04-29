@@ -1,12 +1,17 @@
-apply plugin: 'com.android.application'
+// ─── App build.gradle (Gradle 9 / AGP 8.x compatible) ────────────────────────
+plugins {
+    id 'com.android.application'
+}
 
 android {
+    namespace 'com.craftsdl.game'
     compileSdk 34
+
     ndkVersion "25.2.9519653"
 
     defaultConfig {
         applicationId "com.craftsdl.game"
-        minSdk 21          // Android 5.0+
+        minSdk 21
         targetSdk 34
         versionCode 1
         versionName "1.0.0"
@@ -14,18 +19,20 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17 -O2"
-                arguments "-DANDROID=ON",
-                          "-DSDL2_SOURCE_DIR=${project.rootDir}/../deps/SDL2"
+                // SDL deps are resolved via add_subdirectory in cmake/Android.cmake
+                // deps/ folder is at repo root (rootDir/../)
+                arguments "-DANDROID=ON"
             }
         }
+
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }
     }
 
     externalNativeBuild {
         cmake {
-            path "../../CMakeLists.txt"
+            path "${rootDir}/../CMakeLists.txt"
             version "3.22.1"
         }
     }
@@ -33,7 +40,8 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug  // replace with keystore for prod
+            // Use debug signing for CI; replace with real keystore for production
+            signingConfig signingConfigs.debug
         }
         debug {
             jniDebuggable true
@@ -42,12 +50,14 @@ android {
 
     sourceSets {
         main {
-            assets.srcDirs = ['../../assets']
+            assets.srcDirs = ["${rootDir}/../assets"]
             java.srcDirs   = ['src/main/java']
+            jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
-}
 
-dependencies {
-    // No Java deps needed — pure NDK
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 }

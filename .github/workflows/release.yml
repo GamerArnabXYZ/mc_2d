@@ -15,80 +15,113 @@ permissions:
   contents: write
 
 jobs:
-  # ── Build Android ───────────────────────────────────────────────────────────
+  # ── Android APK ─────────────────────────────────────────────────────────────
   build-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK + NDK
-        uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v3
 
-      - run: sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"
+      - name: Install NDK + CMake
+        run: sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1" 2>&1 | tail -3
 
-      - name: Download SDL deps
+      - name: Cache SDL2 deps
+        uses: actions/cache@v4
+        id: sdl-cache
+        with:
+          path: deps
+          key: sdl2-deps-2.28.5
+
+      - name: Download SDL2 sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p deps
-          curl -L https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz | tar -xz -C deps && mv deps/SDL2-2.28.5 deps/SDL2
-          curl -L https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz | tar -xz -C deps && mv deps/SDL2_image-2.8.2 deps/SDL2_image
-          curl -L https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz | tar -xz -C deps && mv deps/SDL2_ttf-2.22.0 deps/SDL2_ttf
+          curl -fsSL https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2-2.28.5 deps/SDL2
+          curl -fsSL https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2_image-2.8.2 deps/SDL2_image
+          curl -fsSL https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2_ttf-2.22.0 deps/SDL2_ttf
 
-      - name: Copy SDL Java sources
-        run: cp -r deps/SDL2/android-project/app/src/main/java android/app/src/main/
+      - name: Setup SDL2 Java sources
+        run: |
+          mkdir -p android/app/src/main/java
+          cp -r deps/SDL2/android-project/app/src/main/java/. android/app/src/main/java/
+
+      - name: Generate texture atlas
+        run: pip install Pillow -q && python3 tools/gen_atlas.py assets/textures/atlas.png
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle-install
+          /tmp/gradle-install/gradle-8.7/bin/gradle wrapper --gradle-version=8.7
+          chmod +x gradlew
 
       - name: Build APK
         working-directory: android
-        run: |
-          gradle wrapper
-          ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Collect APK
         run: |
           mkdir -p artifacts
-          find android -name "*.apk" -exec cp {} artifacts/CraftSDL-android.apk \;
+          find android -name "*.apk" | head -1 | xargs -I{} cp {} artifacts/CraftSDL-android.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: artifacts/CraftSDL-android.apk
 
-  # ── Build Web ────────────────────────────────────────────────────────────────
+  # ── Web WASM ────────────────────────────────────────────────────────────────
   build-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Emscripten SDK
+        uses: actions/cache@v4
+        id: emsdk-cache
+        with:
+          path: emsdk
+          key: emsdk-3.1.51
+
       - name: Install Emscripten
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/emscripten-core/emsdk.git
           cd emsdk && ./emsdk install 3.1.51 && ./emsdk activate 3.1.51
 
-      - name: Build WASM
+      - name: Generate texture atlas
+        run: pip install Pillow -q && python3 tools/gen_atlas.py assets/textures/atlas.png
+
+      - name: Configure + Build WASM
         run: |
           source emsdk/emsdk_env.sh
           mkdir -p build-web
           emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
-          emmake cmake --build build-web -j$(nproc)
+          emmake cmake --build build-web --config Release -j$(nproc)
+
+      - name: Package web output
+        run: |
           mkdir -p web-dist
-          cp build-web/CraftSDL.js   web-dist/
-          cp build-web/CraftSDL.wasm web-dist/
-          [ -f build-web/CraftSDL.data ] && cp build-web/CraftSDL.data web-dist/ || true
-          cp build-web/CraftSDL.html web-dist/index.html 2>/dev/null || cp web/shell.html web-dist/index.html
-          sed -i 's|{{{ SCRIPT }}}|<script src="CraftSDL.js"></script>|g' web-dist/index.html
+          for ext in html js wasm data; do
+            [ -f "build-web/CraftSDL.$ext" ] && cp "build-web/CraftSDL.$ext" web-dist/ || true
+          done
+          [ -f web-dist/CraftSDL.html ] && mv web-dist/CraftSDL.html web-dist/index.html || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: web-build
           path: web-dist/
 
-  # ── Create Release ───────────────────────────────────────────────────────────
+  # ── GitHub Release ───────────────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
     needs: [build-android, build-web]
@@ -101,44 +134,38 @@ jobs:
         with:
           path: release-files
 
-      # Build full project ZIP (source + all artifacts)
-      - name: Create full project ZIP
-        run: |
-          mkdir -p release-bundle
-
-          # Include source
-          zip -r release-bundle/CraftSDL-source.zip . \
-            --exclude ".git/*" \
-            --exclude "build-*" \
-            --exclude "deps/*" \
-            --exclude "emsdk/*" \
-            --exclude "*.apk"
-
-          # Include APK
-          cp release-files/android-apk/CraftSDL-android.apk release-bundle/
-
-          # Include web build as zip
-          cd release-files/web-build
-          zip -r ../../release-bundle/CraftSDL-web.zip .
-          cd ../../
-
-          # Full bundle (APK + web + source)
-          zip -j release-bundle/CraftSDL-full-bundle.zip \
-            release-bundle/CraftSDL-android.apk \
-            release-bundle/CraftSDL-web.zip \
-            release-bundle/CraftSDL-source.zip
-
-      # Get version tag
       - name: Get version
         id: get_version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
-            echo "VERSION=${{ github.event.inputs.version || 'v1.0.0' }}" >> $GITHUB_OUTPUT
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           fi
 
-      # Create GitHub Release
+      - name: Create release ZIPs
+        run: |
+          mkdir -p release-bundle
+          # APK
+          cp release-files/android-apk/CraftSDL-android.apk release-bundle/
+
+          # Web ZIP
+          cd release-files/web-build
+          zip -r ../../release-bundle/CraftSDL-web.zip .
+          cd ../..
+
+          # Source ZIP (exclude build artifacts and deps)
+          zip -r release-bundle/CraftSDL-source.zip . \
+            --exclude ".git/*" "build-*/*" "deps/*" "emsdk/*" \
+            --exclude "release-files/*" "release-bundle/*" \
+            --exclude "*.apk" "*.zip"
+
+          # Full bundle
+          cd release-bundle
+          zip CraftSDL-full-bundle.zip \
+            CraftSDL-android.apk CraftSDL-web.zip CraftSDL-source.zip
+          cd ..
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -146,31 +173,29 @@ jobs:
           name: "CraftSDL ${{ steps.get_version.outputs.VERSION }}"
           body: |
             ## CraftSDL ${{ steps.get_version.outputs.VERSION }}
-
             ### 📦 Downloads
             | File | Platform |
             |------|----------|
-            | `CraftSDL-android.apk` | Android 5.0+ (ARM64, ARMv7, x86_64) |
-            | `CraftSDL-web.zip` | Web (WASM) — extract and serve |
-            | `CraftSDL-source.zip` | Complete C++ source |
+            | `CraftSDL-android.apk` | Android 5.0+ (arm64, armeabi-v7a, x86_64) |
+            | `CraftSDL-web.zip` | Web/WASM — extract and serve with any HTTP server |
+            | `CraftSDL-source.zip` | Full C++ source |
             | `CraftSDL-full-bundle.zip` | All of the above |
 
             ### 🕹️ Controls
-            **Mobile/Touch:** Left joystick = move/jump · Right tap = break · Right hold = break continuously · Short tap = place  
-            **Desktop:** WASD/Arrows = move · Space = jump · Left click = break · Right click = place · E = inventory · 1-9 = hotbar · Scroll = select slot
+            **Mobile:** Left joystick = move/jump · Right tap = place · Right hold = break · Top-right = inventory
+            **Desktop:** WASD/Arrows = move · Space = jump · LMB = break · RMB = place · E = inventory · 1–9 / Scroll = slot
 
-            ### 🌐 Web Deploy
-            Extract `CraftSDL-web.zip` and host the files. Visit your GitHub Pages at `https://username.github.io/repo` (check the `web` branch).
+            ### 🌐 Web Hosting
+            Extract `CraftSDL-web.zip`, serve the folder with any HTTP server.
+            Live demo: Check the `web` branch → GitHub Pages.
           files: |
             release-bundle/CraftSDL-android.apk
             release-bundle/CraftSDL-web.zip
             release-bundle/CraftSDL-source.zip
             release-bundle/CraftSDL-full-bundle.zip
-          draft: false
-          prerelease: false
 
-      # Also deploy web build to `web` branch
-      - name: Deploy web to gh-pages branch
+      # Deploy web to GitHub Pages
+      - name: Deploy to web branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

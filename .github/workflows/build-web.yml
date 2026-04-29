@@ -13,11 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Emscripten SDK ────────────────────────────────────────────────────
+      # ── Emscripten SDK (cached) ───────────────────────────────────────────
       - name: Cache Emscripten SDK
         uses: actions/cache@v4
         id: emsdk-cache
@@ -33,29 +32,20 @@ jobs:
           ./emsdk install 3.1.51
           ./emsdk activate 3.1.51
 
-      - name: Activate Emscripten
-        run: |
-          source emsdk/emsdk_env.sh
-          echo "EMSDK=$GITHUB_WORKSPACE/emsdk" >> $GITHUB_ENV
-          echo "$GITHUB_WORKSPACE/emsdk/upstream/emscripten" >> $GITHUB_PATH
-
-
-      # ── Generate placeholder atlas if not present ─────────────────────────
+      # ── Generate texture atlas ────────────────────────────────────────────
       - name: Generate texture atlas
         run: |
           pip install Pillow -q
           python3 tools/gen_atlas.py assets/textures/atlas.png
 
-      # ── Configure + Build ─────────────────────────────────────────────────
-      - name: Configure CMake (Emscripten)
+      # ── Configure with emcmake ────────────────────────────────────────────
+      - name: Configure (emcmake)
         run: |
           source emsdk/emsdk_env.sh
           mkdir -p build-web
-          emcmake cmake -S . -B build-web \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_EXE_LINKER_FLAGS="-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=67108864 -s USE_SDL=2 -s USE_SDL_IMAGE=2 -s SDL2_IMAGE_FORMATS=[\"png\"] -s USE_SDL_TTF=2 --preload-file assets --shell-file web/shell.html -O2" \
-            --no-warn-unused-cli
+          emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 
+      # ── Build ─────────────────────────────────────────────────────────────
       - name: Build WASM
         run: |
           source emsdk/emsdk_env.sh
@@ -65,17 +55,13 @@ jobs:
       - name: Package web output
         run: |
           mkdir -p web-dist
-          # CraftSDL.html is the entry; .js and .wasm are alongside it
-          for f in build-web/CraftSDL.*; do cp "$f" web-dist/ 2>/dev/null || true; done
-          # data file if preloaded assets exist
-          # data file copied above
-          # HTML shell (Emscripten writes final index.html)
-          [ -f build-web/CraftSDL.html ] && cp build-web/CraftSDL.html web-dist/index.html ||
-            cp web/shell.html web-dist/index.html
-          # Fix script tag in index.html if needed
-          sed -i 's|{{{ SCRIPT }}}|<script src="CraftSDL.js"></script>|g' web-dist/index.html
+          for ext in html js wasm data; do
+            [ -f "build-web/CraftSDL.$ext" ] && cp "build-web/CraftSDL.$ext" web-dist/ || true
+          done
+          [ -f web-dist/CraftSDL.html ] && mv web-dist/CraftSDL.html web-dist/index.html || true
+          ls -lh web-dist/
 
-      # ── Upload web artifact ───────────────────────────────────────────────
+      # ── Upload artifact ───────────────────────────────────────────────────
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
         with:
@@ -83,7 +69,7 @@ jobs:
           path: web-dist/
           retention-days: 30
 
-      # ── Deploy to `web` branch ────────────────────────────────────────────
+      # ── Deploy to web branch (GitHub Pages) ──────────────────────────────
       - name: Deploy to web branch
         uses: peaceiris/actions-gh-pages@v4
         with:

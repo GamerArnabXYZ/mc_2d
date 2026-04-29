@@ -4,28 +4,31 @@ project(CraftSDL VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ─── Source files ─────────────────────────────────────────────────────────────
+# ─── Source files (absolute paths — works from any build dir) ─────────────────
 set(SOURCES
-    src/main.cpp
-    src/core/Game.cpp
-    src/core/Timer.cpp
-    src/world/World.cpp
-    src/world/WorldGen.cpp
-    src/player/Player.cpp
-    src/player/Inventory.cpp
-    src/renderer/Renderer.cpp
-    src/renderer/TextureAtlas.cpp
-    src/renderer/Camera.cpp
-    src/input/InputManager.cpp
-    src/save/SaveManager.cpp
-    src/ui/CraftingUI.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Game.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/Timer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/world/World.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/world/WorldGen.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/player/Player.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/player/Inventory.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/Renderer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/TextureAtlas.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/renderer/Camera.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/input/InputManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/save/SaveManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CraftingUI.cpp
 )
+
+# ─── Include dir (also absolute) ─────────────────────────────────────────────
+set(SRC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # ─── Platform detection ───────────────────────────────────────────────────────
 if(EMSCRIPTEN)
-    include(cmake/Emscripten.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emscripten.cmake)
 elseif(ANDROID)
-    include(cmake/Android.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Android.cmake)
 else()
-    include(cmake/Desktop.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Desktop.cmake)
 endif()

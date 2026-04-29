@@ -13,8 +13,6 @@ jobs:
       # ── Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       # ── Java 17 ───────────────────────────────────────────────────────────
       - name: Set up JDK 17
@@ -27,72 +25,79 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK 25
+      - name: Install NDK and CMake
         run: |
-          sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"
+          sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1" 2>&1 | tail -5
 
+      # ── Download SDL2 sources (cached) ────────────────────────────────────
+      - name: Cache SDL2 deps
+        uses: actions/cache@v4
+        id: sdl-cache
+        with:
+          path: deps
+          key: sdl2-deps-2.28.5
 
-      # ── Generate placeholder atlas ────────────────────────────────────────
+      - name: Download SDL2 sources
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p deps
+          # SDL2
+          curl -fsSL https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2-2.28.5 deps/SDL2
+          # SDL2_image
+          curl -fsSL https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2_image-2.8.2 deps/SDL2_image
+          # SDL2_ttf
+          curl -fsSL https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz \
+            | tar -xz -C deps && mv deps/SDL2_ttf-2.22.0 deps/SDL2_ttf
+
+      # ── Copy SDL2 Java Activity into project ──────────────────────────────
+      - name: Setup SDL2 Java sources
+        run: |
+          # SDL2 Android activity Java source
+          mkdir -p android/app/src/main/java
+          cp -r deps/SDL2/android-project/app/src/main/java/. android/app/src/main/java/
+
+      # ── Generate texture atlas ────────────────────────────────────────────
       - name: Generate texture atlas
         run: |
           pip install Pillow -q
           python3 tools/gen_atlas.py assets/textures/atlas.png
 
-      # ── SDL2 source (needed for NDK build) ────────────────────────────────
-      - name: Cache SDL2 source
-        uses: actions/cache@v4
-        id: sdl2-cache
-        with:
-          path: deps/SDL2
-          key: sdl2-2.28.5
-
-      - name: Download SDL2 source
-        if: steps.sdl2-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p deps
-          curl -L https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz \
-            | tar -xz -C deps
-          mv deps/SDL2-2.28.5 deps/SDL2
-
-      - name: Download SDL2_image source
-        run: |
-          curl -L https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.2/SDL2_image-2.8.2.tar.gz \
-            | tar -xz -C deps
-          mv deps/SDL2_image-2.8.2 deps/SDL2_image
-
-      - name: Download SDL2_ttf source
-        run: |
-          curl -L https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.22.0/SDL2_ttf-2.22.0.tar.gz \
-            | tar -xz -C deps
-          mv deps/SDL2_ttf-2.22.0 deps/SDL2_ttf
-
-      # ── Copy SDL2 Java activity source ────────────────────────────────────
-      - name: Copy SDL2 Java sources into Android project
-        run: |
-          cp -r deps/SDL2/android-project/app/src/main/java android/app/src/main/
-          # Add SDL2_image and SDL2_ttf as Android libs
-          mkdir -p android/app/src/main/jni
-          ln -sf ../../../../deps/SDL2     android/app/src/main/jni/SDL2
-          ln -sf ../../../../deps/SDL2_image android/app/src/main/jni/SDL2_image
-          ln -sf ../../../../deps/SDL2_ttf   android/app/src/main/jni/SDL2_ttf
-
-      # ── Gradle build ──────────────────────────────────────────────────────
-      - name: Build APK (Release)
+      # ── Generate Gradle wrapper ───────────────────────────────────────────
+      - name: Generate Gradle wrapper
         working-directory: android
         run: |
-          chmod +x gradlew || true
-          gradle wrapper
-          ./gradlew assembleRelease \
-            -PSDL2_SOURCE_DIR=${{ github.workspace }}/deps/SDL2
+          # Bootstrap gradle wrapper using the system gradle or download it
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp/gradle-install
+          /tmp/gradle-install/gradle-8.7/bin/gradle wrapper --gradle-version=8.7
+          chmod +x gradlew
 
-      # ── Rename and collect APK ────────────────────────────────────────────
-      - name: Collect APK
+      # ── Build APK ─────────────────────────────────────────────────────────
+      - name: Build Release APK
+        working-directory: android
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/25.2.9519653
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -PSDL2_ROOT=${{ github.workspace }}/deps 2>&1
+
+      # ── Collect APK ───────────────────────────────────────────────────────
+      - name: Collect APK artifact
         run: |
           mkdir -p artifacts
-          find android -name "*.apk" -exec cp {} artifacts/CraftSDL-android.apk \;
+          APK=$(find android -name "*.apk" | head -1)
+          if [ -n "$APK" ]; then
+            cp "$APK" artifacts/CraftSDL-android.apk
+            echo "APK: $APK"
+          else
+            echo "No APK found!" && exit 1
+          fi
 
-      # ── Upload artifact ───────────────────────────────────────────────────
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CraftSDL-android-apk
