@@ -25,8 +25,6 @@ target_link_options(CraftSDL PRIVATE
     "SHELL:-s STACK_SIZE=1048576"
     "SHELL:-s ENVIRONMENT=web"
     "SHELL:-s ASSERTIONS=0"
-    # Canvas resize: SDL2 will use the canvas element size
-    "SHELL:-s CANVAS_RESIZE_POLICY=2"
     "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/assets"
     "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
 )

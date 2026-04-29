@@ -19,6 +19,9 @@ add_subdirectory(${SDL2_TTF_SRC} ${CMAKE_BINARY_DIR}/sdl2_ttf)
 
 add_library(CraftSDL SHARED ${SOURCES})
 
+# SDL2 SDLActivity.java loads "libmain.so" — output must be named "main"
+set_target_properties(CraftSDL PROPERTIES OUTPUT_NAME "main")
+
 target_include_directories(CraftSDL PRIVATE
     ${SRC_INCLUDE_DIR}
     ${SDL2_SRC}/include
