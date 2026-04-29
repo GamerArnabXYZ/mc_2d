@@ -1,4 +1,5 @@
 #include "CraftingUI.h"
+#include "../renderer/Renderer.h"
 #include "../core/Config.h"
 #include <cstdio>
 #include <cstring>
@@ -62,15 +63,15 @@ int CraftingUI::slotAt(int px, int py, const Inventory& inv) const {
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
-void CraftingUI::render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory& inv) {
+void CraftingUI::render(Renderer* rend, const Inventory& inv) {
     // Center panel
     m_panelX = (WINDOW_W - PANEL_W) / 2;
     m_panelY = (WINDOW_H - PANEL_H) / 2;
 
     // Dim background
-    SDL_SetRenderDrawColor(rend, 0, 0, 0, 160);
+    SDL_SetRenderDrawColor(rend->sdl(), 0, 0, 0, 160);
     SDL_Rect full = {0, 0, WINDOW_W, WINDOW_H};
-    SDL_RenderFillRect(rend, &full);
+    SDL_RenderFillRect(rend->sdl(), &full);
 
     // Panel background
     drawPanel(rend);
@@ -83,21 +84,21 @@ void CraftingUI::render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory
     for (int row = 0; row < INV_ROWS; row++) {
         for (int col = 0; col < INV_COLS; col++) {
             SDL_Rect r = invSlotRect(row, col);
-            drawSlot(rend, r, inv.invSlot(row * INV_COLS + col), atlas);
+            drawSlot(rend, r, inv.invSlot(row * INV_COLS + col));
         }
     }
 
     // ── Hotbar slots ──────────────────────────────────────────────────────────
     for (int i = 0; i < HOTBAR_SLOTS; i++) {
         SDL_Rect r = hotbarSlotRect(i);
-        drawSlot(rend, r, inv.hotbarSlot(i), atlas, i == inv.selected());
+        drawSlot(rend, r, inv.hotbarSlot(i), i == inv.selected());
     }
 
     // ── Crafting input 2×2 ────────────────────────────────────────────────────
     for (int i = 0; i < 4; i++) {
         SDL_Rect r = craftInSlotRect(i);
         ItemStack craftItem(inv.getCraftInput(i), (inv.getCraftInput(i) != 0) ? 1 : 0);
-        drawSlot(rend, r, craftItem, atlas);
+        drawSlot(rend, r, craftItem);
     }
 
     // Arrow "→" between craft grid and output
@@ -111,10 +112,10 @@ void CraftingUI::render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory
     SDL_Rect outR = craftOutRect();
     // Highlight output if something available
     if (!output.empty()) {
-        SDL_SetRenderDrawColor(rend, 60, 200, 60, 80);
-        SDL_RenderFillRect(rend, &outR);
+        SDL_SetRenderDrawColor(rend->sdl(), 60, 200, 60, 80);
+        SDL_RenderFillRect(rend->sdl(), &outR);
     }
-    drawSlot(rend, outR, output, atlas);
+    drawSlot(rend, outR, output);
 
     // ── Close hint ────────────────────────────────────────────────────────────
     drawLabel(rend, "[E] or tap outside to close", m_panelX + 60, m_panelY + PANEL_H - 18);
@@ -167,12 +168,11 @@ bool CraftingUI::handleClick(int mx, int my, bool rightBtn, Inventory& inv) {
 }
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
-void CraftingUI::fillRect(SDL_Renderer* r, SDL_Rect rect, SDL_Color col) {
-    SDL_SetRenderDrawColor(r, col.r, col.g, col.b, col.a);
-    SDL_RenderFillRect(r, &rect);
+void CraftingUI::fillRect(Renderer* r, SDL_Rect rect, SDL_Color col) {
+    r->drawRect(rect.x, rect.y, rect.w, rect.h, col, true);
 }
 
-void CraftingUI::drawPanel(SDL_Renderer* r) {
+void CraftingUI::drawPanel(Renderer* r) {
     // Shadow
     SDL_Rect shadow = {m_panelX + 4, m_panelY + 4, PANEL_W, PANEL_H};
     fillRect(r, shadow, {0, 0, 0, 120});
@@ -182,8 +182,8 @@ void CraftingUI::drawPanel(SDL_Renderer* r) {
     fillRect(r, panel, {40, 35, 30, 240});
 
     // Border
-    SDL_SetRenderDrawColor(r, 160, 130, 80, 255);
-    SDL_RenderDrawRect(r, &panel);
+    SDL_SetRenderDrawColor(r->sdl(), 160, 130, 80, 255);
+    SDL_RenderDrawRect(r->sdl(), &panel);
 
     // Title bar
     SDL_Rect title = {m_panelX, m_panelY, PANEL_W, 22};
@@ -191,20 +191,12 @@ void CraftingUI::drawPanel(SDL_Renderer* r) {
     drawLabel(r, "  INVENTORY & CRAFTING", m_panelX + 4, m_panelY + 4);
 }
 
-void CraftingUI::drawLabel(SDL_Renderer* r, const char* text, int x, int y) {
-    // Simple pixel-art style: draw colored rect per character (no font dep)
-    // Each "char" = 5px wide block
-    SDL_SetRenderDrawColor(r, 220, 200, 140, 255);
-    int cx = x;
-    for (const char* c = text; *c; c++, cx += 5) {
-        if (*c == ' ') continue;
-        SDL_Rect dot = {cx, y, 4, 8};
-        SDL_RenderFillRect(r, &dot);
-    }
+void CraftingUI::drawLabel(Renderer* r, const char* text, int x, int y) {
+    r->drawText(text, x, y, {220, 200, 140, 255});
 }
 
-void CraftingUI::drawSlot(SDL_Renderer* r, SDL_Rect rect,
-                           const ItemStack& item, TextureAtlas& atlas,
+void CraftingUI::drawSlot(Renderer* r, SDL_Rect rect,
+                           const ItemStack& item,
                            bool selected) {
     // Slot background
     SDL_Color bg = selected
@@ -213,33 +205,18 @@ void CraftingUI::drawSlot(SDL_Renderer* r, SDL_Rect rect,
     fillRect(r, rect, bg);
 
     // Slot border
-    SDL_SetRenderDrawColor(r, 100, 90, 70, 255);
-    SDL_RenderDrawRect(r, &rect);
+    SDL_SetRenderDrawColor(r->sdl(), 100, 90, 70, 255);
+    SDL_RenderDrawRect(r->sdl(), &rect);
 
     if (item.empty()) return;
 
     // Item icon (inner rect)
-    SDL_Rect inner = {rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10};
-    if (atlas.isLoaded()) {
-        SDL_Rect src = atlas.getRect(item.id, false);
-        SDL_SetTextureColorMod(atlas.texture(), 255, 255, 255);
-        SDL_RenderCopy(r, atlas.texture(), &src, &inner);
-    } else {
-        // Fallback color square
-        SDL_SetRenderDrawColor(r, 100, 180, 100, 255);
-        SDL_RenderFillRect(r, &inner);
-    }
+    r->drawItem(item.id, rect.x + 5, rect.y + 5, rect.w - 10);
 
     // Count badge (bottom-right)
     if (item.count > 1) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", item.count);
-        // Draw tiny number as pixel blocks
-        SDL_SetRenderDrawColor(r, 255, 255, 80, 255);
-        SDL_Rect badge = {rect.x + rect.w - 14, rect.y + rect.h - 10, 12, 8};
-        fillRect(r, badge, {0, 0, 0, 160});
-        // We just draw a small colored mark; real text needs TTF
-        SDL_SetRenderDrawColor(r, 255, 255, 80, 255);
-        SDL_RenderDrawRect(r, &badge);
+        r->drawText(buf, rect.x + rect.w - 18, rect.y + rect.h - 14, {255, 255, 80, 255});
     }
 }

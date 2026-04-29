@@ -3,6 +3,8 @@
 #include "../player/Inventory.h"
 #include "../renderer/TextureAtlas.h"
 
+class Renderer;
+
 // ─── CraftingUI ───────────────────────────────────────────────────────────────
 // Renders full-screen inventory + 2×2 crafting grid when player opens inv.
 // Touch-friendly: large slots, clear labels.
@@ -11,7 +13,7 @@ public:
     CraftingUI();
 
     // Call every frame when inventory is open
-    void render(SDL_Renderer* rend, TextureAtlas& atlas, const Inventory& inv);
+    void render(Renderer* rend, const Inventory& inv);
 
     // Returns true if event was consumed (tap on a slot etc.)
     bool handleTouch(float fx, float fy, bool down, Inventory& inv);
@@ -38,11 +40,11 @@ private:
     SDL_Rect craftOutRect    ()      const;
 
     // ── Draw helpers ──────────────────────────────────────────────────────────
-    void drawSlot    (SDL_Renderer* r, SDL_Rect rect, const ItemStack& item,
-                      TextureAtlas& atlas, bool selected = false);
-    void drawPanel   (SDL_Renderer* r);
-    void drawLabel   (SDL_Renderer* r, const char* text, int x, int y);
-    void fillRect    (SDL_Renderer* r, SDL_Rect rect, SDL_Color col);
+    void drawSlot    (Renderer* r, SDL_Rect rect, const ItemStack& item,
+                      bool selected = false);
+    void drawPanel   (Renderer* r);
+    void drawLabel   (Renderer* r, const char* text, int x, int y);
+    void fillRect    (Renderer* r, SDL_Rect rect, SDL_Color col);
 
     // Slot hit test: returns slot code or -1
     int slotAt(int px, int py, const Inventory& inv) const;

@@ -39,6 +39,9 @@ public:
     SDL_Renderer* sdl()      { return m_rend; }
     TextureAtlas& getAtlas() { return m_atlas; }
 
+    void drawRect  (int x,int y,int w,int h, SDL_Color col, bool fill=true);
+    void drawText  (const std::string& txt, int x,int y, SDL_Color col);
+    void drawItem  (uint8_t id, int x, int y, int size);
 private:
     SDL_Renderer* m_rend;
     TextureAtlas  m_atlas;
@@ -53,8 +56,5 @@ private:
     void renderHUD          (const Player& p, float fps, const InputManager* input);
     void renderHotbar       (const Player& p);
     void renderTouchOverlay (const InputManager& inp);
-
-    void drawRect  (int x,int y,int w,int h, SDL_Color col, bool fill=true);
-    void drawText  (const std::string& txt, int x,int y, SDL_Color col);
-    void drawItem  (uint8_t id, int x, int y, int size);
 };
+

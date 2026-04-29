@@ -52,6 +52,7 @@ private:
     std::vector<Chunk> m_chunks;   // indexed 0..WORLD_CHUNKS-1
     int               m_chunkOffset; // world chunk index of m_chunks[0]
     float             m_dayFrac;
+    std::string       m_saveDir;
 
     void  shiftChunks(int newOffset);
     bool  saveChunk(const Chunk& c, const std::string& dir);

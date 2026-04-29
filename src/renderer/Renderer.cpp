@@ -78,7 +78,7 @@ void Renderer::render(const World& world, const Player& player,
     renderHUD(player, fps, input);
 
     if (craftUI && player.inventory().isOpen())
-        craftUI->render(m_rend, m_atlas, player.inventory());
+        craftUI->render(this, player.inventory());
 
     SDL_RenderPresent(m_rend);
 }
