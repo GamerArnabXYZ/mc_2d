@@ -10,15 +10,17 @@
 #include "../ui/CraftingUI.h"
 
 // ─── Game ─────────────────────────────────────────────────────────────────────
-// Owns everything. Single entry point from main().
 class Game {
 public:
     Game();
     ~Game();
 
-    bool init();     // SDL init, window creation, load assets
-    void run();      // Main loop (blocking until quit)
-    void shutdown(); // Cleanup
+    bool init();
+    void run();      // desktop: blocking loop; web: sets emscripten callback
+    void shutdown();
+
+    // Called once per frame — used by emscripten callback
+    void tickFrame();
 
 private:
     SDL_Window*   m_win;
@@ -32,7 +34,7 @@ private:
     CraftingUI    m_craftUI;
 
     bool          m_running;
-    float         m_saveTimer; // auto-save every 60s
+    float         m_saveTimer;
 
     void update(float dt);
     void processInput();

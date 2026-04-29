@@ -5,74 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>CraftSDL — 2D Sandbox</title>
+<title>CraftSDL</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
+  * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    background: #1a1a2e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: #e0e0e0;
-    overflow: hidden;
-    touch-action: none;
+    background:#1a1a2e;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    width:100vw; height:100vh;
+    overflow:hidden;
+    font-family:'Courier New',monospace; color:#e0e0e0;
   }
-
   #loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
+    display:flex; flex-direction:column;
+    align-items:center; gap:14px; text-align:center;
   }
-
-  #loading h1 {
-    font-size: 2rem;
-    color: #4ade80;
-    text-shadow: 0 0 20px #4ade80;
-  }
-
-  #loading p { font-size: 0.9rem; color: #888; }
-
-  .progress-bar {
-    width: 260px; height: 16px;
-    background: #333;
-    border-radius: 8px;
-    overflow: hidden;
-    border: 1px solid #4ade80;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #4ade80, #22d3ee);
-    width: 0%;
-    transition: width 0.3s;
-    border-radius: 8px;
-  }
-
-  canvas {
-    display: none;
-    max-width: 100vw;
-    max-height: 100vh;
-    object-fit: contain;
-    image-rendering: pixelated;
-    touch-action: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  #status {
-    position: fixed;
-    bottom: 8px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.7);
-    color: #4ade80;
-    font-size: 0.7rem;
-    padding: 4px 12px;
-    border-radius: 12px;
-    display: none;
+  #loading h1 { font-size:1.8rem; color:#4ade80; text-shadow:0 0 16px #4ade80; }
+  #loading p  { color:#888; font-size:0.85rem; }
+  .bar { width:240px; height:14px; background:#222; border-radius:8px;
+         border:1px solid #4ade80; overflow:hidden; }
+  .bar-fill { height:100%; background:linear-gradient(90deg,#4ade80,#22d3ee);
+               width:0%; transition:width .3s; border-radius:8px; }
+  /* IMPORTANT: canvas id must be "canvas" — SDL2/Emscripten looks for this */
+  canvas#canvas {
+    display:none;
+    width:100vw !important;
+    height:100vh !important;
+    object-fit:contain;
+    image-rendering:pixelated;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
   }
 </style>
 </head>
@@ -80,56 +42,62 @@
 
 <div id="loading">
   <h1>⛏️ CraftSDL</h1>
-  <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
-  <p id="loadText">Loading WASM...</p>
+  <div class="bar"><div class="bar-fill" id="prog"></div></div>
+  <p id="loadText">Loading…</p>
 </div>
 
-<canvas id="canvas"></canvas>
-<div id="status" id="status"></div>
+<!-- SDL2/Emscripten requires canvas id="canvas" -->
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 
 <script>
-  // ── Emscripten Module config ─────────────────────────────────────────────
-  var Module = {
-    canvas: (function() { return document.getElementById('canvas'); })(),
+var Module = {
+  // SDL2 Emscripten port looks for canvas element with id 'canvas'
+  canvas: document.getElementById('canvas'),
 
-    setStatus: function(text) {
-      var loadText = document.getElementById('loadText');
-      var prog     = document.getElementById('prog');
-      var status   = document.getElementById('status');
-      if (loadText) loadText.textContent = text || 'Running...';
-      if (!text && prog) {
-        // Loading done
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('canvas').style.display  = 'block';
-        if (status) {
-          status.style.display = 'block';
-          status.textContent   = 'CraftSDL Running';
-          setTimeout(() => { status.style.display = 'none'; }, 2000);
-        }
-      }
-    },
+  setStatus: function(text) {
+    var el = document.getElementById('loadText');
+    var pg = document.getElementById('prog');
+    if (el) el.textContent = text || 'Running…';
+    if (!text) {
+      // Loading complete — hide spinner, show canvas
+      document.getElementById('loading').style.display = 'none';
+      var cv = document.getElementById('canvas');
+      cv.style.display = 'block';
+      // Resize canvas to fill screen
+      cv.width  = window.innerWidth;
+      cv.height = window.innerHeight;
+    }
+  },
 
-    monitorRunDependencies: function(left) {
-      var prog = document.getElementById('prog');
-      if (prog && left > 0) {
-        prog.style.width = Math.max(10, (100 - left * 5)) + '%';
-      }
-    },
+  monitorRunDependencies: function(left) {
+    var pg = document.getElementById('prog');
+    if (pg) pg.style.width = Math.max(5, (100 - left * 4)) + '%';
+  },
 
-    onRuntimeInitialized: function() {
-      var prog = document.getElementById('prog');
-      if (prog) prog.style.width = '100%';
-    },
+  onRuntimeInitialized: function() {
+    var pg = document.getElementById('prog');
+    if (pg) pg.style.width = '100%';
+  },
 
-    print:    function(t) { console.log(t); },
-    printErr: function(t) { console.warn(t); }
-  };
+  print:    function(t) { console.log('[CraftSDL]', t); },
+  printErr: function(t) { console.warn('[CraftSDL]', t); }
+};
 
-  // ── Prevent context menu on right-click / long-press ────────────────────
-  document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+// Handle resize
+window.addEventListener('resize', function() {
+  var cv = document.getElementById('canvas');
+  if (cv.style.display !== 'none') {
+    cv.width  = window.innerWidth;
+    cv.height = window.innerHeight;
+  }
+});
+
+// Prevent default touch behavior (scroll, zoom) on canvas
+document.addEventListener('touchstart', function(e) {
+  if (e.target.id === 'canvas') e.preventDefault();
+}, { passive: false });
 </script>
 
-<!-- Emscripten generated JS (output name = CraftSDL.js) -->
 {{{ SCRIPT }}}
 
 </body>

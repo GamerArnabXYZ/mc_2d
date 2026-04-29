@@ -1,6 +1,13 @@
 #pragma once
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+// SDL_ttf: try both include paths for cross-platform compatibility
+#if __has_include(<SDL2/SDL_ttf.h>)
+  #include <SDL2/SDL_ttf.h>
+#elif __has_include(<SDL_ttf.h>)
+  #include <SDL_ttf.h>
+#else
+  #error "SDL2_ttf not found — check include paths"
+#endif
 #include "TextureAtlas.h"
 #include "Camera.h"
 #include "../world/World.h"

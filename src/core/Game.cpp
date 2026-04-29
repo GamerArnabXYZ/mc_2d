@@ -1,18 +1,28 @@
 #include "Game.h"
 #include "Config.h"
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
+#if __has_include(<SDL2/SDL_image.h>)
+  #include <SDL2/SDL_image.h>
+#elif __has_include(<SDL_image.h>)
+  #include <SDL_image.h>
+#endif
+#if __has_include(<SDL2/SDL_ttf.h>)
+  #include <SDL2/SDL_ttf.h>
+#elif __has_include(<SDL_ttf.h>)
+  #include <SDL_ttf.h>
+#endif
 #include <cmath>
 #include <cstdio>
 
 #ifdef __EMSCRIPTEN__
   #include <emscripten.h>
-  // Emscripten needs a static loop callback
+  // Static pointer for emscripten callback — tickFrame() = one frame only
   static Game* g_game = nullptr;
-  static void emLoop() { if (g_game) g_game->run(); }
+  static void emscriptenTick() {
+      if (g_game) g_game->tickFrame();
+  }
 #endif
 
-// ─── Constructor / Destructor ─────────────────────────────────────────────────
+// ─── Constructor ──────────────────────────────────────────────────────────────
 Game::Game()
     : m_win(nullptr)
     , m_world(WORLD_SEED_DEFAULT)
@@ -52,7 +62,7 @@ bool Game::init() {
         return false;
     }
 
-    // Generate initial world around spawn
+    // Generate initial world
     m_world.ensureChunksAround(WORLD_CHUNKS / 2);
 
     // Load save if exists
@@ -62,64 +72,75 @@ bool Game::init() {
     }
 
     m_running = true;
-    SDL_Log("CraftSDL initialized OK");
+    SDL_Log("CraftSDL init OK");
     return true;
 }
 
-// ─── Main Loop ────────────────────────────────────────────────────────────────
+// ─── run() ────────────────────────────────────────────────────────────────────
 void Game::run() {
 #ifdef __EMSCRIPTEN__
-    // Emscripten: set loop callback and return immediately
+    // Web: hand control to browser, tickFrame() called each animation frame
     g_game = this;
-    emscripten_set_main_loop(emLoop, 0, 1);
-    return;
-#endif
-
+    emscripten_set_main_loop(emscriptenTick, 0, 1);
+    // NOTE: emscripten_set_main_loop with simulate_infinite_loop=1
+    // never returns — SDL_Quit happens via EM_ASM or browser unload
+#else
+    // Desktop/Android: blocking game loop
     while (m_running) {
         m_timer.tick();
-        float dt = m_timer.getDelta();
-
-        if (!m_input.processEvents()) {
-            m_running = false;
-            break;
-        }
-
+        if (!m_input.processEvents()) { m_running = false; break; }
         processInput();
-        update(dt);
-        m_renderer.render(m_world, m_player, m_camera, m_timer.getFPS(), &m_craftUI, &m_input);
-        autoSave(dt);
+        update(m_timer.getDelta());
+        m_renderer.render(m_world, m_player, m_camera,
+                          m_timer.getFPS(), &m_craftUI, &m_input);
+        autoSave(m_timer.getDelta());
     }
+#endif
 }
 
-// ─── Input → Game Commands ────────────────────────────────────────────────────
+// ─── tickFrame() — ONE frame, called by emscripten each animation frame ───────
+void Game::tickFrame() {
+    m_timer.tick();
+    float dt = m_timer.getDelta();
+
+    if (!m_input.processEvents()) {
+        m_running = false;
+#ifdef __EMSCRIPTEN__
+        emscripten_cancel_main_loop();
+        shutdown();
+#endif
+        return;
+    }
+
+    processInput();
+    update(dt);
+    m_renderer.render(m_world, m_player, m_camera,
+                      m_timer.getFPS(), &m_craftUI, &m_input);
+    autoSave(dt);
+}
+
+// ─── processInput ─────────────────────────────────────────────────────────────
 void Game::processInput() {
-    // Movement
     m_player.setMoveX(m_input.moveX());
-
-    // Jump
     if (m_input.jumpPressed()) m_player.jump();
-
-    // Inventory
     if (m_input.openInventory()) m_player.toggleInventory();
 
-    // Slot selection
     int scroll = m_input.slotScroll();
     if (scroll != 0) m_player.scrollSlot(scroll);
     int direct = m_input.hotbarDirect();
     if (direct >= 0) m_player.selectSlot(direct);
 
-    // ── Block targeting: screen → world → block ───────────────────────────────
+    // Block targeting
     int tsx = m_input.targetScreenX();
     int tsy = m_input.targetScreenY();
     int tbx = m_camera.screenToBlockX(tsx);
     int tby = m_camera.screenToBlockY(tsy);
 
-    // Check reach from player center
     float pcx = m_player.x() + PLAYER_W * 0.5f;
     float pcy = m_player.y() + PLAYER_H * 0.5f;
     float tpx = (float)(tbx * BLOCK_SIZE) + BLOCK_SIZE * 0.5f;
     float tpy = (float)(tby * BLOCK_SIZE) + BLOCK_SIZE * 0.5f;
-    float dist = sqrtf((tpx - pcx) * (tpx - pcx) + (tpy - pcy) * (tpy - pcy));
+    float dist = sqrtf((tpx-pcx)*(tpx-pcx) + (tpy-pcy)*(tpy-pcy));
 
     if (m_input.isBreaking() && dist <= BREAK_REACH) {
         m_player.startBreak(tbx, tby);
@@ -132,24 +153,18 @@ void Game::processInput() {
     }
 }
 
-// ─── Update ───────────────────────────────────────────────────────────────────
+// ─── update ───────────────────────────────────────────────────────────────────
 void Game::update(float dt) {
-    // Ensure chunks around player
     m_world.ensureChunksAround(m_player.chunkX());
-
-    // Update world (day-night cycle)
     m_world.update(dt);
-
-    // Update player physics
     m_player.update(dt, m_world);
 
-    // Update camera → follow player center
-    float camTargX = m_player.x() + PLAYER_W * 0.5f;
-    float camTargY = m_player.y() + PLAYER_H * 0.5f;
-    m_camera.update(camTargX, camTargY, dt);
+    float camX = m_player.x() + PLAYER_W * 0.5f;
+    float camY = m_player.y() + PLAYER_H * 0.5f;
+    m_camera.update(camX, camY, dt);
 }
 
-// ─── Auto-save ────────────────────────────────────────────────────────────────
+// ─── autoSave ─────────────────────────────────────────────────────────────────
 void Game::autoSave(float dt) {
     m_saveTimer += dt;
     if (m_saveTimer >= 60.0f) {
@@ -160,11 +175,12 @@ void Game::autoSave(float dt) {
     }
 }
 
-// ─── Shutdown ─────────────────────────────────────────────────────────────────
+// ─── shutdown ─────────────────────────────────────────────────────────────────
 void Game::shutdown() {
     if (m_running) {
         m_save.saveWorld(m_world);
         m_save.savePlayer(m_player);
+        m_running = false;
     }
     m_renderer.shutdown();
     if (m_win) { SDL_DestroyWindow(m_win); m_win = nullptr; }
