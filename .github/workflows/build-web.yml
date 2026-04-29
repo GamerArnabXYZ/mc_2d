@@ -16,7 +16,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Emscripten SDK (cached) ───────────────────────────────────────────
       - name: Cache Emscripten SDK
         uses: actions/cache@v4
         id: emsdk-cache
@@ -32,26 +31,22 @@ jobs:
           ./emsdk install 3.1.51
           ./emsdk activate 3.1.51
 
-      # ── Generate texture atlas ────────────────────────────────────────────
       - name: Generate texture atlas
         run: |
           pip install Pillow -q
           python3 tools/gen_atlas.py assets/textures/atlas.png
 
-      # ── Configure with emcmake ────────────────────────────────────────────
       - name: Configure (emcmake)
         run: |
           source emsdk/emsdk_env.sh
           mkdir -p build-web
           emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 
-      # ── Build ─────────────────────────────────────────────────────────────
       - name: Build WASM
         run: |
           source emsdk/emsdk_env.sh
           emmake cmake --build build-web --config Release -j$(nproc)
 
-      # ── Package web output ────────────────────────────────────────────────
       - name: Package web output
         run: |
           mkdir -p web-dist
@@ -61,7 +56,6 @@ jobs:
           [ -f web-dist/CraftSDL.html ] && mv web-dist/CraftSDL.html web-dist/index.html || true
           ls -lh web-dist/
 
-      # ── Upload artifact ───────────────────────────────────────────────────
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
         with:
@@ -69,7 +63,6 @@ jobs:
           path: web-dist/
           retention-days: 30
 
-      # ── Deploy to web branch (GitHub Pages) ──────────────────────────────
       - name: Deploy to web branch
         uses: peaceiris/actions-gh-pages@v4
         with:

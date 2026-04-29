@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v1.0.0)'
+        description: 'Release version e.g. v1.0.0'
         required: true
         default: 'v1.0.0'
 
@@ -15,7 +15,6 @@ permissions:
   contents: write
 
 jobs:
-  # ── Android APK ─────────────────────────────────────────────────────────────
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -54,29 +53,11 @@ jobs:
           mkdir -p android/app/src/main/java
           cp -r deps/SDL2/android-project/app/src/main/java/. android/app/src/main/java/
 
-      - name: Generate launcher icons
+      - name: Generate assets
         run: |
           pip install Pillow -q
-          python3 - << 'ICONEOF'
-from PIL import Image, ImageDraw
-import os
-sizes = {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
-base = 'android/app/src/main/res'
-for folder, size in sizes.items():
-    path = f'{base}/{folder}/ic_launcher.png'
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    m = size // 8
-    draw.rounded_rectangle([m, m, size-m, size-m], radius=size//5, fill=(76, 153, 0, 255))
-    cx, cy, t = size//2, size//2, max(2, size//16)
-    draw.rectangle([cx-t, cy-size//3, cx+t, cy+size//3], fill=(255,255,255,255))
-    draw.rectangle([cx-size//3, cy-t, cx+size//3, cy+t], fill=(255,255,255,255))
-    img.save(path, 'PNG')
-ICONEOF
-
-      - name: Generate texture atlas
-        run: pip install Pillow -q && python3 tools/gen_atlas.py assets/textures/atlas.png
+          python3 tools/gen_atlas.py assets/textures/atlas.png
+          python3 tools/gen_icons.py android/app/src/main/res
 
       - name: Generate Gradle wrapper
         working-directory: android
@@ -100,7 +81,6 @@ ICONEOF
           name: android-apk
           path: artifacts/CraftSDL-android.apk
 
-  # ── Web WASM ────────────────────────────────────────────────────────────────
   build-web:
     runs-on: ubuntu-latest
     steps:
@@ -120,7 +100,9 @@ ICONEOF
           cd emsdk && ./emsdk install 3.1.51 && ./emsdk activate 3.1.51
 
       - name: Generate texture atlas
-        run: pip install Pillow -q && python3 tools/gen_atlas.py assets/textures/atlas.png
+        run: |
+          pip install Pillow -q
+          python3 tools/gen_atlas.py assets/textures/atlas.png
 
       - name: Configure + Build WASM
         run: |
@@ -142,21 +124,19 @@ ICONEOF
           name: web-build
           path: web-dist/
 
-  # ── GitHub Release ───────────────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
     needs: [build-android, build-web]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-files
 
       - name: Get version
-        id: get_version
+        id: ver
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
@@ -167,55 +147,36 @@ ICONEOF
       - name: Create release ZIPs
         run: |
           mkdir -p release-bundle
-          # APK
           cp release-files/android-apk/CraftSDL-android.apk release-bundle/
-
-          # Web ZIP
-          cd release-files/web-build
-          zip -r ../../release-bundle/CraftSDL-web.zip .
-          cd ../..
-
-          # Source ZIP (exclude build artifacts and deps)
+          cd release-files/web-build && zip -r ../../release-bundle/CraftSDL-web.zip . && cd ../..
           zip -r release-bundle/CraftSDL-source.zip . \
             --exclude ".git/*" "build-*/*" "deps/*" "emsdk/*" \
-            --exclude "release-files/*" "release-bundle/*" \
-            --exclude "*.apk" "*.zip"
-
-          # Full bundle
+            --exclude "release-files/*" "release-bundle/*" "*.apk" "*.zip"
           cd release-bundle
-          zip CraftSDL-full-bundle.zip \
-            CraftSDL-android.apk CraftSDL-web.zip CraftSDL-source.zip
-          cd ..
+          zip CraftSDL-full-bundle.zip CraftSDL-android.apk CraftSDL-web.zip CraftSDL-source.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          name: "CraftSDL ${{ steps.get_version.outputs.VERSION }}"
+          tag_name: ${{ steps.ver.outputs.VERSION }}
+          name: "CraftSDL ${{ steps.ver.outputs.VERSION }}"
           body: |
-            ## CraftSDL ${{ steps.get_version.outputs.VERSION }}
-            ### 📦 Downloads
+            ## CraftSDL ${{ steps.ver.outputs.VERSION }}
             | File | Platform |
             |------|----------|
-            | `CraftSDL-android.apk` | Android 5.0+ (arm64, armeabi-v7a, x86_64) |
-            | `CraftSDL-web.zip` | Web/WASM — extract and serve with any HTTP server |
-            | `CraftSDL-source.zip` | Full C++ source |
+            | `CraftSDL-android.apk` | Android 5.0+ |
+            | `CraftSDL-web.zip` | Web/WASM |
+            | `CraftSDL-source.zip` | C++ Source |
             | `CraftSDL-full-bundle.zip` | All of the above |
 
-            ### 🕹️ Controls
-            **Mobile:** Left joystick = move/jump · Right tap = place · Right hold = break · Top-right = inventory
-            **Desktop:** WASD/Arrows = move · Space = jump · LMB = break · RMB = place · E = inventory · 1–9 / Scroll = slot
-
-            ### 🌐 Web Hosting
-            Extract `CraftSDL-web.zip`, serve the folder with any HTTP server.
-            Live demo: Check the `web` branch → GitHub Pages.
+            **Mobile controls:** Left joystick = move/jump · Right tap = place · Right hold = break · Top-right = inventory
+            **Desktop:** WASD = move · Space = jump · LMB = break · RMB = place · E = inventory · 1-9/Scroll = slot
           files: |
             release-bundle/CraftSDL-android.apk
             release-bundle/CraftSDL-web.zip
             release-bundle/CraftSDL-source.zip
             release-bundle/CraftSDL-full-bundle.zip
 
-      # Deploy web to GitHub Pages
       - name: Deploy to web branch
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -223,4 +184,4 @@ ICONEOF
           publish_branch: web
           publish_dir: release-files/web-build
           force_orphan: true
-          commit_message: "Deploy ${{ steps.get_version.outputs.VERSION }} [skip ci]"
+          commit_message: "Deploy ${{ steps.ver.outputs.VERSION }} [skip ci]"

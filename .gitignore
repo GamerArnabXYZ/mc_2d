@@ -1,4 +1,4 @@
-# Build outputs
+# ─── Build outputs ────────────────────────────────────────────────────────────
 build/
 build-*/
 *.o
@@ -6,31 +6,33 @@ build-*/
 *.so
 *.out
 
-# Android
+# ─── Android ──────────────────────────────────────────────────────────────────
 android/.gradle/
 android/app/build/
 android/local.properties
 *.apk
 *.aab
 
-# Emscripten / Web
+# ─── Emscripten / Web ─────────────────────────────────────────────────────────
 *.js.map
 CraftSDL.js
 CraftSDL.wasm
 CraftSDL.data
 web-dist/
 
-# IDE
+# ─── IDE ──────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.code-workspace
 
-# deps (downloaded by CI)
+# ─── Downloaded deps (CI fetches these) ──────────────────────────────────────
 deps/
 emsdk/
 
-# Save data (local only)
-save/
+# ─── Game save data (user runtime data, NOT source code) ─────────────────────
+# Use specific path to avoid matching src/save/ source folder
+/save/
+save/*.bin
 
-# macOS
+# ─── macOS ────────────────────────────────────────────────────────────────────
 .DS_Store
