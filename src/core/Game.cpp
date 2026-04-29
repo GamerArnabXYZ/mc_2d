@@ -140,15 +140,16 @@ void Game::processInput() {
     float pcy = m_player.y() + PLAYER_H * 0.5f;
     float tpx = (float)(tbx * BLOCK_SIZE) + BLOCK_SIZE * 0.5f;
     float tpy = (float)(tby * BLOCK_SIZE) + BLOCK_SIZE * 0.5f;
-    float dist = sqrtf((tpx-pcx)*(tpx-pcx) + (tpy-pcy)*(tpy-pcy));
+    float distPx = sqrtf((tpx-pcx)*(tpx-pcx) + (tpy-pcy)*(tpy-pcy));
+    float distBlocks = distPx / BLOCK_SIZE;
 
-    if (m_input.isBreaking() && dist <= BREAK_REACH) {
+    if (m_input.isBreaking() && distBlocks <= BREAK_REACH) {
         m_player.startBreak(tbx, tby);
     } else {
         m_player.stopBreak();
     }
 
-    if (m_input.placedThisFrame() && dist <= PLACE_REACH) {
+    if (m_input.placedThisFrame() && distBlocks <= PLACE_REACH) {
         m_player.placeBlock(tbx, tby, m_world);
     }
 }

@@ -1,328 +1,381 @@
 #include "Renderer.h"
 #include <cstdio>
-#include <cstring>
 #include <cmath>
 
-// ─── Constructor/Destructor ────────────────────────────────────────────────────
 Renderer::Renderer() : m_rend(nullptr), m_font(nullptr) {}
 Renderer::~Renderer() { shutdown(); }
 
 bool Renderer::init(SDL_Window* win) {
-    // Hardware accelerated renderer, VSync for battery saving on mobile
     m_rend = SDL_CreateRenderer(win, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!m_rend) return false;
-
     SDL_SetRenderDrawBlendMode(m_rend, SDL_BLENDMODE_BLEND);
-
-    // Load texture atlas (falls back to generated colors if png missing)
     m_atlas.load(m_rend, "assets/textures/atlas.png");
-
-    // Load font (optional, shows FPS etc)
-    if (TTF_WasInit()) {
-        m_font = TTF_OpenFont("assets/fonts/font.ttf", 12);
-    }
+    if (TTF_WasInit())
+        m_font = TTF_OpenFont("assets/fonts/font.ttf", 11);
     return true;
 }
 
 void Renderer::shutdown() {
     m_atlas.free();
-    if (m_font) { TTF_CloseFont(m_font); m_font = nullptr; }
-    if (m_rend) { SDL_DestroyRenderer(m_rend); m_rend = nullptr; }
+    if (m_font)  { TTF_CloseFont(m_font); m_font = nullptr; }
+    if (m_rend)  { SDL_DestroyRenderer(m_rend); m_rend = nullptr; }
 }
 
-// ─── Main Render ──────────────────────────────────────────────────────────────
+// ─── Block color palette (nice colors) ───────────────────────────────────────
+static SDL_Color blockColor(uint8_t id) {
+    switch(id) {
+        case BLOCK_GRASS:       return {80,  150, 50,  255};
+        case BLOCK_DIRT:        return {130, 90,  55,  255};
+        case BLOCK_STONE:       return {130, 130, 130, 255};
+        case BLOCK_SAND:        return {220, 200, 130, 255};
+        case BLOCK_GRAVEL:      return {150, 140, 130, 255};
+        case BLOCK_WOOD:        return {140, 100, 50,  255};
+        case BLOCK_LEAVES:      return {45,  130, 35,  200};
+        case BLOCK_WATER:       return {40,  100, 200, 160};
+        case BLOCK_COAL_ORE:    return {80,  80,  80,  255};
+        case BLOCK_IRON_ORE:    return {150, 110, 80,  255};
+        case BLOCK_GOLD_ORE:    return {200, 170, 30,  255};
+        case BLOCK_DIAMOND_ORE: return {30,  210, 210, 255};
+        case BLOCK_PLANKS:      return {190, 145, 80,  255};
+        case BLOCK_COBBLESTONE: return {110, 110, 110, 255};
+        case BLOCK_BEDROCK:     return {40,  40,  40,  255};
+        case BLOCK_GLASS:       return {180, 220, 255, 100};
+        case BLOCK_TORCH:       return {255, 200, 50,  255};
+        case BLOCK_CRAFTING:    return {160, 110, 60,  255};
+        case BLOCK_CHEST:       return {180, 130, 50,  255};
+        case BLOCK_SNOW:        return {230, 240, 255, 255};
+        case BLOCK_ICE:         return {150, 200, 240, 200};
+        case BLOCK_CACTUS:      return {50,  160, 50,  255};
+        default:                return {200, 50,  200, 255};
+    }
+}
+
+// ─── Top face (lighter) and side shade ───────────────────────────────────────
+static SDL_Color lighten(SDL_Color c, float f) {
+    return {(uint8_t)CLAMP(c.r*f,0,255),(uint8_t)CLAMP(c.g*f,0,255),
+            (uint8_t)CLAMP(c.b*f,0,255),c.a};
+}
+static SDL_Color dimBy(SDL_Color c, uint8_t ambient) {
+    float t = ambient / 255.0f;
+    return {(uint8_t)(c.r*t),(uint8_t)(c.g*t),(uint8_t)(c.b*t),c.a};
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
 void Renderer::render(const World& world, const Player& player,
                       const Camera& cam, float fps,
                       CraftingUI* craftUI, const InputManager* input) {
-    uint8_t ambient = world.getAmbientLight();
+    uint8_t amb = world.getAmbientLight();
 
-    // 1. Sky
-    renderSky(ambient);
+    renderSky(amb);
+    renderChunks(world, cam, amb);
+    renderBreakOverlay(player, cam, world);
+    renderPlayer(player, cam, amb);
+    renderHUD(player, fps, input);
 
-    // 2. World chunks (with frustum culling)
-    renderChunks(world, cam, ambient);
-
-    // 3. Break overlay
-    renderBreak(player, cam);
-
-    // 4. Player sprite
-    renderPlayer(player, cam, ambient);
-
-    // 5. HUD (hotbar, FPS) — skip hotbar if inventory open
-    renderHUD(player, fps);
-
-    // 6. Touch joystick overlay (mobile only)
-    if (input && input->joyActive()) {
-        renderTouchOverlay(*input);
-    }
-
-    // 7. Inventory/crafting UI (rendered on top)
-    if (craftUI && player.inventory().isOpenConst()) {
+    if (craftUI && const_cast<Player&>(player).inventory().isOpen())
         craftUI->render(m_rend, m_atlas, const_cast<Player&>(player).inventory());
-    }
 
     SDL_RenderPresent(m_rend);
 }
 
-// ─── Sky ──────────────────────────────────────────────────────────────────────
-void Renderer::renderSky(uint8_t ambient) {
-    // Lerp sky color: day=87,167,220  night=10,10,40
-    float t = ambient / 255.0f;
-    uint8_t r = (uint8_t)(10 + t * (87 - 10));
-    uint8_t g = (uint8_t)(10 + t * (167 - 10));
-    uint8_t b = (uint8_t)(40 + t * (220 - 40));
-    SDL_SetRenderDrawColor(m_rend, r, g, b, 255);
+void Renderer::renderSky(uint8_t amb) {
+    float t = amb / 255.0f;
+    SDL_SetRenderDrawColor(m_rend,
+        (uint8_t)(8  + t*100), (uint8_t)(12 + t*160), (uint8_t)(30 + t*200), 255);
     SDL_RenderClear(m_rend);
+
+    // Simple sun/moon indicator
+    if (t > 0.4f) {
+        // Sun
+        SDL_SetRenderDrawColor(m_rend, 255, 230, 80, (uint8_t)((t-0.4f)*420));
+        SDL_Rect sun = {WINDOW_W - 60, 20, 36, 36};
+        SDL_RenderFillRect(m_rend, &sun);
+    } else {
+        // Moon
+        SDL_SetRenderDrawColor(m_rend, 200, 200, 220, 160);
+        SDL_Rect moon = {WINDOW_W - 60, 20, 28, 28};
+        SDL_RenderFillRect(m_rend, &moon);
+    }
 }
 
-// ─── Chunk Rendering with culling ─────────────────────────────────────────────
-void Renderer::renderChunks(const World& world, const Camera& cam, uint8_t ambient) {
-    // Only draw blocks visible on screen (+1 block margin)
-    int camBX = World::pixToBlock((int)cam.x()) - 1;
-    int camBY = World::pixToBlock((int)cam.y()) - 1;
-    int visW  = (WINDOW_W / BLOCK_SIZE) + 3;
-    int visH  = (WINDOW_H / BLOCK_SIZE) + 3;
+void Renderer::renderChunks(const World& world, const Camera& cam, uint8_t amb) {
+    int visW = WINDOW_W / BLOCK_SIZE + 3;
+    int visH = WINDOW_H / BLOCK_SIZE + 3;
+    int camBX = (int)floorf(cam.x() / BLOCK_SIZE) - visW/2;
+    int camBY = (int)floorf(cam.y() / BLOCK_SIZE) - visH/2;
 
     for (int dy = 0; dy < visH; dy++) {
-        int by = camBY + dy - visH / 2;
+        int by = camBY + dy;
         if (by < 0 || by >= CHUNK_H) continue;
-
         for (int dx = 0; dx < visW; dx++) {
-            int bx = camBX + dx - visW / 2;
-
+            int bx = camBX + dx;
             uint8_t id = world.getBlock(bx, by);
             if (id == BLOCK_AIR) continue;
 
-            // Skip if all neighbors are solid (interior culling)
-            // Simple: skip only if ALL 4 neighbors are solid & not transparent
-            bool n = blockIsSolid(world.getBlock(bx, by - 1)) && !blockIsTransparent(world.getBlock(bx, by - 1));
-            bool s = blockIsSolid(world.getBlock(bx, by + 1)) && !blockIsTransparent(world.getBlock(bx, by + 1));
-            bool l = blockIsSolid(world.getBlock(bx - 1, by)) && !blockIsTransparent(world.getBlock(bx - 1, by));
-            bool r = blockIsSolid(world.getBlock(bx + 1, by)) && !blockIsTransparent(world.getBlock(bx + 1, by));
-            if (n && s && l && r) continue; // hidden block, skip
+            // Simple occlusion: skip if all 4 neighbors solid+opaque
+            bool nS = !blockIsTransparent(world.getBlock(bx, by-1)) && blockIsSolid(world.getBlock(bx,by-1));
+            bool sS = !blockIsTransparent(world.getBlock(bx, by+1)) && blockIsSolid(world.getBlock(bx,by+1));
+            bool lS = !blockIsTransparent(world.getBlock(bx-1,by))  && blockIsSolid(world.getBlock(bx-1,by));
+            bool rS = !blockIsTransparent(world.getBlock(bx+1,by))  && blockIsSolid(world.getBlock(bx+1,by));
+            if (nS && sS && lS && rS) continue;
 
             int sx = cam.worldToScreenX((float)(bx * BLOCK_SIZE));
             int sy = cam.worldToScreenY((float)(by * BLOCK_SIZE));
-
-            renderBlock(sx, sy, id, ambient);
+            renderBlock(sx, sy, id, amb, world.getBlock(bx, by-1) == BLOCK_AIR);
         }
     }
 }
 
-// ─── Single Block ─────────────────────────────────────────────────────────────
-void Renderer::renderBlock(int sx, int sy, uint8_t blockID, uint8_t ambient) {
-    SDL_Rect dst = { sx, sy, BLOCK_SIZE, BLOCK_SIZE };
-
-    if (m_atlas.isLoaded()) {
-        SDL_Rect src = m_atlas.getRect(blockID, false);
-        // Apply ambient lighting via color modulation
-        SDL_SetTextureColorMod(m_atlas.texture(), ambient, ambient, ambient);
-        SDL_RenderCopy(m_rend, m_atlas.texture(), &src, &dst);
-    } else {
-        // Fallback: solid colors matching block types
-        static const SDL_Color FALLBACK[] = {
-            {0,0,0,0},         // AIR
-            {58,122,28,255},   // GRASS
-            {122,82,48,255},   // DIRT
-            {138,138,138,255}, // STONE
-            {232,210,138,255}, // SAND
-            {154,144,144,255}, // GRAVEL
-            {139,105,20,255},  // WOOD
-            {42,138,28,255},   // LEAVES
-            {34,85,170,180},   // WATER
-            {90,90,90,255},    // COAL ORE
-            {122,122,122,255}, // IRON ORE
-            {232,200,32,255},  // GOLD ORE
-            {0,212,212,255},   // DIAMOND ORE
-            {200,160,96,255},  // PLANKS
-            {136,136,136,255}, // COBBLESTONE
-            {68,68,68,255},    // BEDROCK
-            {200,238,255,160}, // GLASS
-        };
-        if (blockID < sizeof(FALLBACK)/sizeof(FALLBACK[0])) {
-            SDL_Color c = FALLBACK[blockID];
-            // Dim by ambient
-            c.r = (uint8_t)(c.r * ambient / 255);
-            c.g = (uint8_t)(c.g * ambient / 255);
-            c.b = (uint8_t)(c.b * ambient / 255);
-            SDL_SetRenderDrawColor(m_rend, c.r, c.g, c.b, c.a);
-            SDL_RenderFillRect(m_rend, &dst);
-            // Dark border for depth
-            SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 60);
-            SDL_RenderDrawRect(m_rend, &dst);
-        }
-    }
-}
-
-// ─── Break Overlay (crack progress) ───────────────────────────────────────────
-void Renderer::renderBreak(const Player& p, const Camera& cam) {
-    if (!p.isBreaking()) return;
-    float prog = p.breakProgress();
-    uint8_t id = 0; // we just show overlay, real hardness in player
-
-    int sx = cam.worldToScreenX((float)(p.breakTargetX() * BLOCK_SIZE));
-    int sy = cam.worldToScreenY((float)(p.breakTargetY() * BLOCK_SIZE));
-
-    // Draw darkening overlay proportional to break progress
-    // prog / hardness handled in Player; here prog = m_breakTimer
+void Renderer::renderBlock(int sx, int sy, uint8_t id, uint8_t amb, bool topExposed) {
     SDL_Rect dst = {sx, sy, BLOCK_SIZE, BLOCK_SIZE};
-    uint8_t alpha = (uint8_t)(prog * 180.0f);
-    alpha = alpha > 200 ? 200 : alpha;
-    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, alpha);
+    SDL_Color base = dimBy(blockColor(id), amb);
+
+    // Main face
+    SDL_SetRenderDrawColor(m_rend, base.r, base.g, base.b, base.a);
     SDL_RenderFillRect(m_rend, &dst);
 
-    // Highlight border
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 120);
+    // Top face highlight (only if top is exposed to air)
+    if (topExposed && BLOCK_SIZE >= 16) {
+        SDL_Color top = dimBy(lighten(blockColor(id), 1.35f), amb);
+        SDL_Rect topBar = {sx, sy, BLOCK_SIZE, BLOCK_SIZE/5};
+        SDL_SetRenderDrawColor(m_rend, top.r, top.g, top.b, top.a);
+        SDL_RenderFillRect(m_rend, &topBar);
+    }
+
+    // Ore dot overlay
+    if (id >= BLOCK_COAL_ORE && id <= BLOCK_DIAMOND_ORE) {
+        static const SDL_Color oreDots[] = {
+            {20,20,20,255},{200,130,90,255},{255,200,20,255},{0,230,230,255}
+        };
+        SDL_Color dc = oreDots[id - BLOCK_COAL_ORE];
+        int m = BLOCK_SIZE/4;
+        SDL_Rect dot = {sx+m, sy+m, BLOCK_SIZE/2, BLOCK_SIZE/2};
+        SDL_SetRenderDrawColor(m_rend, dc.r, dc.g, dc.b, 200);
+        SDL_RenderFillRect(m_rend, &dot);
+    }
+
+    // Grid line (subtle border)
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 40);
     SDL_RenderDrawRect(m_rend, &dst);
 }
 
-// ─── Player Sprite ────────────────────────────────────────────────────────────
-void Renderer::renderPlayer(const Player& p, const Camera& cam, uint8_t ambient) {
+void Renderer::renderBreakOverlay(const Player& p, const Camera& cam, const World& w) {
+    if (!p.isBreaking()) return;
+    int bx = p.breakTargetX(), by = p.breakTargetY();
+    uint8_t id = w.getBlock(bx, by);
+    if (id == BLOCK_AIR) return;
+
+    float hard = BLOCK_DEFS[id].hardness;
+    if (hard <= 0) hard = 0.3f;
+    float prog = p.breakProgress() / hard;
+    prog = CLAMP(prog, 0, 1);
+
+    int sx = cam.worldToScreenX((float)(bx * BLOCK_SIZE));
+    int sy = cam.worldToScreenY((float)(by * BLOCK_SIZE));
+    SDL_Rect dst = {sx, sy, BLOCK_SIZE, BLOCK_SIZE};
+
+    // Crack overlay: darken proportionally
+    uint8_t alpha = (uint8_t)(prog * 160);
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, alpha);
+    SDL_RenderFillRect(m_rend, &dst);
+
+    // White border pulse
+    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 180);
+    SDL_RenderDrawRect(m_rend, &dst);
+
+    // Progress bar at top of block
+    SDL_Rect bar    = {sx, sy - 6, BLOCK_SIZE, 4};
+    SDL_Rect fill   = {sx, sy - 6, (int)(BLOCK_SIZE * prog), 4};
+    SDL_SetRenderDrawColor(m_rend, 60, 60, 60, 200);
+    SDL_RenderFillRect(m_rend, &bar);
+    SDL_SetRenderDrawColor(m_rend, 255, 160, 30, 255);
+    SDL_RenderFillRect(m_rend, &fill);
+}
+
+void Renderer::renderPlayer(const Player& p, const Camera& cam, uint8_t amb) {
     int sx = cam.worldToScreenX(p.x());
     int sy = cam.worldToScreenY(p.y());
+    float t = amb / 255.0f;
 
-    float t = ambient / 255.0f;
-    uint8_t dim = (uint8_t)(ambient);
-
-    // Body (torso + legs)
-    SDL_SetRenderDrawColor(m_rend, (uint8_t)(64*t), (uint8_t)(128*t), (uint8_t)(220*t), 255); // blue shirt
-    SDL_Rect body = {sx + 4, sy + 12, PLAYER_W - 8, 20};
-    SDL_RenderFillRect(m_rend, &body);
+    // Shadow on ground
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 60);
+    SDL_Rect shadow = {sx + 2, sy + PLAYER_H - 2, PLAYER_W - 4, 4};
+    SDL_RenderFillRect(m_rend, &shadow);
 
     // Legs
-    SDL_SetRenderDrawColor(m_rend, (uint8_t)(30*t), (uint8_t)(80*t), (uint8_t)(160*t), 255);
-    SDL_Rect legL = {sx + 4, sy + 32, (PLAYER_W - 8) / 2 - 1, 12};
-    SDL_Rect legR = {sx + PLAYER_W / 2 + 1, sy + 32, (PLAYER_W - 8) / 2 - 1, 12};
+    SDL_SetRenderDrawColor(m_rend, (uint8_t)(40*t), (uint8_t)(80*t), (uint8_t)(160*t), 255);
+    SDL_Rect legL = {sx+4,         sy+PLAYER_H-14, PLAYER_W/2-5, 14};
+    SDL_Rect legR = {sx+PLAYER_W/2+1, sy+PLAYER_H-14, PLAYER_W/2-5, 14};
     SDL_RenderFillRect(m_rend, &legL);
     SDL_RenderFillRect(m_rend, &legR);
 
+    // Body
+    SDL_SetRenderDrawColor(m_rend, (uint8_t)(60*t), (uint8_t)(120*t), (uint8_t)(210*t), 255);
+    SDL_Rect body = {sx+3, sy+12, PLAYER_W-6, PLAYER_H-26};
+    SDL_RenderFillRect(m_rend, &body);
+
     // Head
-    SDL_SetRenderDrawColor(m_rend, (uint8_t)(230*t), (uint8_t)(190*t), (uint8_t)(140*t), 255); // skin
-    SDL_Rect head = {sx + 3, sy, PLAYER_W - 6, 12};
+    SDL_SetRenderDrawColor(m_rend, (uint8_t)(220*t), (uint8_t)(180*t), (uint8_t)(130*t), 255);
+    SDL_Rect head = {sx+4, sy, PLAYER_W-8, 13};
     SDL_RenderFillRect(m_rend, &head);
 
     // Eyes
-    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 255);
-    SDL_Rect eye1 = {sx + 6, sy + 3, 3, 3};
-    SDL_Rect eye2 = {sx + 15, sy + 3, 3, 3};
+    SDL_SetRenderDrawColor(m_rend, 30, 30, 80, 255);
+    SDL_Rect eye1 = {sx+6, sy+3, 3, 3};
+    SDL_Rect eye2 = {sx+PLAYER_W-9, sy+3, 3, 3};
     SDL_RenderFillRect(m_rend, &eye1);
     SDL_RenderFillRect(m_rend, &eye2);
+
+    // Held item in hand
+    const ItemStack& held = const_cast<Player&>(p).inventory().heldItem();
+    if (!held.empty()) {
+        SDL_Color ic = blockColor(held.id);
+        SDL_SetRenderDrawColor(m_rend, ic.r, ic.g, ic.b, 255);
+        SDL_Rect item = {sx + PLAYER_W, sy + PLAYER_H/2, 10, 10};
+        SDL_RenderFillRect(m_rend, &item);
+    }
 }
 
-// ─── HUD ──────────────────────────────────────────────────────────────────────
-void Renderer::renderHUD(const Player& p, float fps) {
-    renderHotbar(p);
-
-    // FPS counter (top-left)
-    char buf[32];
-    snprintf(buf, sizeof(buf), "FPS: %.0f", fps);
-    drawText(buf, 6, 6, {255, 255, 100, 255});
-
-    // Crosshair center
-    int cx = WINDOW_W / 2, cy = WINDOW_H / 2;
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 160);
-    SDL_Rect ch1 = {cx - 8, cy - 1, 16, 2};
-    SDL_Rect ch2 = {cx - 1, cy - 8, 2, 16};
+void Renderer::renderHUD(const Player& p, float fps, const InputManager* input) {
+    // Crosshair
+    int cx = WINDOW_W/2, cy = WINDOW_H/2;
+    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 200);
+    SDL_Rect ch1 = {cx-10, cy-1, 20, 2};
+    SDL_Rect ch2 = {cx-1, cy-10, 2, 20};
     SDL_RenderFillRect(m_rend, &ch1);
     SDL_RenderFillRect(m_rend, &ch2);
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 100);
+    SDL_Rect chs = {cx-11, cy-2, 22, 4};
+    SDL_RenderDrawRect(m_rend, &chs);
+
+    // Hotbar
+    renderHotbar(p);
+
+    // FPS (top-left)
+    char buf[32];
+    snprintf(buf, sizeof(buf), "FPS:%.0f", fps);
+    drawText(buf, 6, 6, {255,255,100,255});
+
+    // Touch joystick overlay
+    if (input && input->joyActive()) {
+        renderTouchOverlay(*input);
+    }
+
+    // Touch control hints (semi-transparent, shown always on mobile)
+#if defined(PLATFORM_ANDROID) || defined(PLATFORM_WEB)
+    if (!input || !input->joyActive()) {
+        // Hint circles when joystick not active
+        SDL_SetRenderDrawColor(m_rend, 255,255,255,25);
+        // Left joystick area hint
+        SDL_Rect joyHint = {10, WINDOW_H-140, 120, 120};
+        SDL_RenderDrawRect(m_rend, &joyHint);
+        // Right action area hint
+        SDL_Rect actHint = {WINDOW_W/2+10, WINDOW_H-80, WINDOW_W/2-20, 60};
+        SDL_RenderDrawRect(m_rend, &actHint);
+    }
+#endif
+
+    // Inventory button (top right)
+    SDL_SetRenderDrawColor(m_rend, 80, 80, 80, 180);
+    SDL_Rect invBtn = {WINDOW_W-70, 10, 60, 60};
+    SDL_RenderFillRect(m_rend, &invBtn);
+    SDL_SetRenderDrawColor(m_rend, 200, 200, 200, 255);
+    SDL_RenderDrawRect(m_rend, &invBtn);
+    drawText("INV", WINDOW_W-60, 34, {255,255,255,255});
 }
 
-// ─── Hotbar ───────────────────────────────────────────────────────────────────
 void Renderer::renderHotbar(const Player& p) {
-    const int SLOT_SIZE  = 44;
-    const int SLOT_PAD   = 4;
-    const int BAR_W      = HOTBAR_SLOTS * (SLOT_SIZE + SLOT_PAD) - SLOT_PAD;
-    const int BAR_X      = (WINDOW_W - BAR_W) / 2;
-    const int BAR_Y      = WINDOW_H - SLOT_SIZE - 12;
+    const int SZ  = 46;
+    const int PAD = 5;
+    const int BAR_W = HOTBAR_SLOTS * (SZ + PAD) - PAD;
+    const int BX = (WINDOW_W - BAR_W) / 2;
+    const int BY = WINDOW_H - SZ - 8;
+
+    // Background bar
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 120);
+    SDL_Rect bar = {BX-6, BY-4, BAR_W+12, SZ+8};
+    SDL_RenderFillRect(m_rend, &bar);
 
     for (int i = 0; i < HOTBAR_SLOTS; i++) {
-        int sx = BAR_X + i * (SLOT_SIZE + SLOT_PAD);
-        bool selected = (i == p.inventory().selected());
+        int sx = BX + i*(SZ+PAD);
+        bool sel = (i == p.inventory().selected());
 
-        // Slot background
-        SDL_Color bg = selected ? SDL_Color{200, 200, 200, 210} : SDL_Color{80, 80, 80, 180};
-        drawRect(sx, BAR_Y, SLOT_SIZE, SLOT_SIZE, bg, true);
-        drawRect(sx, BAR_Y, SLOT_SIZE, SLOT_SIZE, {0, 0, 0, 255}, false);
+        // Slot bg
+        SDL_Color bg = sel ? SDL_Color{180,160,60,230} : SDL_Color{70,70,70,200};
+        SDL_SetRenderDrawColor(m_rend, bg.r, bg.g, bg.b, bg.a);
+        SDL_Rect slot = {sx, BY, SZ, SZ};
+        SDL_RenderFillRect(m_rend, &slot);
+        SDL_SetRenderDrawColor(m_rend, sel?255:120, sel?255:120, sel?0:120, 255);
+        SDL_RenderDrawRect(m_rend, &slot);
 
-        // Item inside slot
         const ItemStack& item = p.inventory().hotbarSlot(i);
         if (!item.empty()) {
-            drawItem(item.id, sx + 6, BAR_Y + 6, SLOT_SIZE - 12);
+            SDL_Color ic = blockColor(item.id);
+            SDL_SetRenderDrawColor(m_rend, ic.r, ic.g, ic.b, ic.a);
+            SDL_Rect iRect = {sx+5, BY+5, SZ-10, SZ-10};
+            SDL_RenderFillRect(m_rend, &iRect);
             // Count
             if (item.count > 1) {
-                char cnt[8];
-                snprintf(cnt, sizeof(cnt), "%d", item.count);
-                drawText(cnt, sx + SLOT_SIZE - 16, BAR_Y + SLOT_SIZE - 14, {255, 255, 255, 255});
+                char cnt[8]; snprintf(cnt,sizeof(cnt),"%d",item.count);
+                drawText(cnt, sx+SZ-20, BY+SZ-15, {255,255,255,255});
             }
         }
     }
 }
 
-// ─── Draw helpers ─────────────────────────────────────────────────────────────
-void Renderer::drawRect(int x, int y, int w, int h, SDL_Color col, bool fill) {
-    SDL_SetRenderDrawColor(m_rend, col.r, col.g, col.b, col.a);
-    SDL_Rect r = {x, y, w, h};
-    if (fill) SDL_RenderFillRect(m_rend, &r);
-    else       SDL_RenderDrawRect(m_rend, &r);
-}
-
-void Renderer::drawText(const std::string& txt, int x, int y, SDL_Color col) {
-    if (!m_font) {
-        // Fallback: tiny colored dot if no font loaded
-        SDL_SetRenderDrawColor(m_rend, col.r, col.g, col.b, col.a);
-        SDL_Rect r = {x, y, (int)txt.size() * 6, 10};
-        SDL_RenderFillRect(m_rend, &r);
-        return;
-    }
-    SDL_Surface* surf = TTF_RenderText_Solid(m_font, txt.c_str(), col);
-    if (!surf) return;
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(m_rend, surf);
-    SDL_FreeSurface(surf);
-    if (!tex) return;
-    int tw, th;
-    SDL_QueryTexture(tex, nullptr, nullptr, &tw, &th);
-    SDL_Rect dst = {x, y, tw, th};
-    SDL_RenderCopy(m_rend, tex, nullptr, &dst);
-    SDL_DestroyTexture(tex);
-}
-
-void Renderer::drawItem(uint8_t id, int x, int y, int size) {
-    if (id == 0) return;
-    SDL_Rect dst = {x, y, size, size};
-    if (m_atlas.isLoaded()) {
-        SDL_Rect src = m_atlas.getRect(id, false);
-        SDL_SetTextureColorMod(m_atlas.texture(), 255, 255, 255);
-        SDL_RenderCopy(m_rend, m_atlas.texture(), &src, &dst);
-    } else {
-        // Fallback color box
-        renderBlock(x, y, id, 255);
-    }
-}
-
-// ─── Touch Joystick Overlay ───────────────────────────────────────────────────
-// Renders virtual joystick base + stick nub on screen for touch devices
-void Renderer::renderTouchOverlay(const InputManager& input) {
-    if (!input.joyActive()) return;
-
-    float bx = input.joyBaseX(),  by = input.joyBaseY();
-    float sx = input.joyStickX(), sy = input.joyStickY();
-    int   R  = (int)TOUCH_JOYSTICK_R;
+void Renderer::renderTouchOverlay(const InputManager& inp) {
+    if (!inp.joyActive()) return;
+    float bx=inp.joyBaseX(), by=inp.joyBaseY();
+    float sx=inp.joyStickX(), sy=inp.joyStickY();
+    int R=(int)TOUCH_JOYSTICK_R;
 
     // Outer ring
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 50);
-    // Draw circle approximation with filled rect + ring
-    SDL_Rect outer = {(int)bx - R, (int)by - R, R*2, R*2};
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 40);
-    SDL_RenderFillRect(m_rend, &outer);
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 120);
-    SDL_RenderDrawRect(m_rend, &outer);
+    SDL_SetRenderDrawColor(m_rend,255,255,255,35);
+    SDL_Rect outer={( int)bx-R,(int)by-R,R*2,R*2};
+    SDL_RenderFillRect(m_rend,&outer);
+    SDL_SetRenderDrawColor(m_rend,255,255,255,100);
+    SDL_RenderDrawRect(m_rend,&outer);
 
-    // Inner nub
-    int nr = 18;
-    SDL_Rect nub = {(int)sx - nr, (int)sy - nr, nr*2, nr*2};
-    SDL_SetRenderDrawColor(m_rend, 255, 255, 255, 160);
-    SDL_RenderFillRect(m_rend, &nub);
-    SDL_SetRenderDrawColor(m_rend, 200, 200, 200, 220);
-    SDL_RenderDrawRect(m_rend, &nub);
+    // Inner stick nub
+    int nr=20;
+    SDL_Rect nub={(int)sx-nr,(int)sy-nr,nr*2,nr*2};
+    SDL_SetRenderDrawColor(m_rend,255,255,255,150);
+    SDL_RenderFillRect(m_rend,&nub);
+    SDL_SetRenderDrawColor(m_rend,220,220,220,220);
+    SDL_RenderDrawRect(m_rend,&nub);
+}
+
+void Renderer::drawRect(int x,int y,int w,int h,SDL_Color c,bool fill){
+    SDL_SetRenderDrawColor(m_rend,c.r,c.g,c.b,c.a);
+    SDL_Rect r={x,y,w,h};
+    if(fill) SDL_RenderFillRect(m_rend,&r);
+    else SDL_RenderDrawRect(m_rend,&r);
+}
+
+void Renderer::drawText(const std::string& txt,int x,int y,SDL_Color col){
+    if (!m_font) {
+        // Fallback: pixel blocks for text
+        SDL_SetRenderDrawColor(m_rend,col.r,col.g,col.b,col.a);
+        SDL_Rect r={x,y,(int)txt.size()*6,8};
+        SDL_RenderFillRect(m_rend,&r);
+        return;
+    }
+    SDL_Surface* s=TTF_RenderText_Solid(m_font,txt.c_str(),col);
+    if(!s) return;
+    SDL_Texture* t=SDL_CreateTextureFromSurface(m_rend,s);
+    SDL_FreeSurface(s);
+    if(!t) return;
+    int tw,th;
+    SDL_QueryTexture(t,nullptr,nullptr,&tw,&th);
+    SDL_Rect dst={x,y,tw,th};
+    SDL_RenderCopy(m_rend,t,nullptr,&dst);
+    SDL_DestroyTexture(t);
+}
+
+void Renderer::drawItem(uint8_t id,int x,int y,int size){
+    SDL_Color c=blockColor(id);
+    SDL_SetRenderDrawColor(m_rend,c.r,c.g,c.b,c.a);
+    SDL_Rect r={x,y,size,size};
+    SDL_RenderFillRect(m_rend,&r);
 }

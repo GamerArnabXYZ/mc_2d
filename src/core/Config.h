@@ -6,32 +6,28 @@
 #define WINDOW_H           854
 
 // ─── World ────────────────────────────────────────────────────────────────────
-#define CHUNK_W            16        // blocks wide
-#define CHUNK_H            128       // blocks tall
-#define WORLD_CHUNKS       32        // total horizontal chunks loaded
-#define BLOCK_SIZE         32        // pixels per block (base)
-#define SEA_LEVEL          64        // sea level block Y
-#define SURFACE_BASE       72       // avg surface height
+#define CHUNK_W            16
+#define CHUNK_H            128
+#define WORLD_CHUNKS       24        // loaded chunks (12 left, 12 right of player)
+#define BLOCK_SIZE         40        // bigger blocks = easier to tap on mobile
+#define SEA_LEVEL          72        // y index from top (higher = deeper sea)
+#define SURFACE_AVG        55        // average surface y from top of chunk
 
 // ─── Physics ──────────────────────────────────────────────────────────────────
-#define GRAVITY            980.0f    // px/s²
-#define JUMP_FORCE        -380.0f
-#define MOVE_SPEED         120.0f
-#define MAX_FALL_SPEED     600.0f
-#define PLAYER_W           24
-#define PLAYER_H           44
+#define GRAVITY            900.0f
+#define JUMP_FORCE        -360.0f
+#define MOVE_SPEED         130.0f
+#define MAX_FALL_SPEED     550.0f
+#define PLAYER_W           26
+#define PLAYER_H           48
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
-#define ATLAS_BLOCK_SIZE   16        // each block in atlas is 16x16 px
-#define ATLAS_COLS         16        // atlas grid columns
+#define ATLAS_BLOCK_SIZE   16
+#define ATLAS_COLS         16
 #define TARGET_FPS         60
 
 // ─── Day-Night ────────────────────────────────────────────────────────────────
-#define DAY_DURATION       600.0f    // seconds per full cycle
-#define DAWN_START         0.0f
-#define NOON               0.25f
-#define DUSK_START         0.5f
-#define NIGHT              0.75f
+#define DAY_DURATION       480.0f   // 8 min cycle
 
 // ─── Inventory ────────────────────────────────────────────────────────────────
 #define HOTBAR_SLOTS       9
@@ -40,17 +36,17 @@
 #define INV_TOTAL_SLOTS    (INV_ROWS * INV_COLS + HOTBAR_SLOTS)
 #define MAX_STACK          64
 
-// ─── Reach ────────────────────────────────────────────────────────────────────
-#define BREAK_REACH        160.0f    // pixels
-#define PLACE_REACH        160.0f
+// ─── Interaction ──────────────────────────────────────────────────────────────
+#define BREAK_REACH        5.5f     // in blocks
+#define PLACE_REACH        5.5f
 
 // ─── Touch Controls ───────────────────────────────────────────────────────────
-#define TOUCH_JOYSTICK_R   55.0f     // joystick radius px
-#define TOUCH_BTN_SIZE     52.0f     // action button size
+#define TOUCH_JOYSTICK_R   60.0f
+#define TOUCH_BTN_SIZE     58.0f
 
-// ─── Platform Macros ─────────────────────────────────────────────────────────
+// ─── Platform ─────────────────────────────────────────────────────────────────
 #ifdef __EMSCRIPTEN__
-  #define PLATFORM_WEB  1
+  #define PLATFORM_WEB 1
 #elif defined(__ANDROID__)
   #define PLATFORM_ANDROID 1
 #else
@@ -59,7 +55,7 @@
 
 // ─── Save ─────────────────────────────────────────────────────────────────────
 #define SAVE_DIR           "save"
-#define WORLD_SEED_DEFAULT 12345
+#define WORLD_SEED_DEFAULT 42069
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 #define CLAMP(v,lo,hi) ((v)<(lo)?(lo):((v)>(hi)?(hi):(v)))
