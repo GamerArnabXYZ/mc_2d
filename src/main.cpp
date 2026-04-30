@@ -1,5 +1,5 @@
 #include "core/Game.h"
-#include "core/SDL_incl.h"
+#include <SDL2/SDL.h>
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 // On Android SDL2 redefines main via SDL_main.h automatically.

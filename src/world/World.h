@@ -14,7 +14,6 @@ public:
     ~World();
 
     // ── Chunk management ──────────────────────────────────────────────────────
-    void      setSaveDir(const std::string& dir) { m_saveDir = dir; }
     void      ensureChunksAround(int centerChunkX); // load/gen chunks near player
     Chunk*    getChunk(int cx);                      // nullptr if not loaded
 
@@ -52,7 +51,6 @@ private:
     std::vector<Chunk> m_chunks;   // indexed 0..WORLD_CHUNKS-1
     int               m_chunkOffset; // world chunk index of m_chunks[0]
     float             m_dayFrac;
-    std::string       m_saveDir;
 
     void  shiftChunks(int newOffset);
     bool  saveChunk(const Chunk& c, const std::string& dir);

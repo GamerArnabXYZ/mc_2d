@@ -1,5 +1,9 @@
 #include "TextureAtlas.h"
-#include "../core/SDL_incl.h"
+#if __has_include(<SDL2/SDL_image.h>)
+  #include <SDL2/SDL_image.h>
+#elif __has_include(<SDL_image.h>)
+  #include <SDL_image.h>
+#endif
 #include <cstdio>
 
 TextureAtlas::TextureAtlas() : m_tex(nullptr), m_atlasW(0), m_atlasH(0) {}

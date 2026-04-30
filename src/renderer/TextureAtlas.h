@@ -1,5 +1,5 @@
 #pragma once
-#include "../core/SDL_incl.h"
+#include <SDL2/SDL.h>
 #include "../world/Block.h"
 #include "../core/Config.h"
 #include <string>

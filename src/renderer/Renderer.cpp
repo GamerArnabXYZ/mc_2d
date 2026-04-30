@@ -19,10 +19,6 @@ bool Renderer::init(SDL_Window* win) {
 void Renderer::shutdown() {
     m_atlas.free();
     if (m_font)  { TTF_CloseFont(m_font); m_font = nullptr; }
-    for (auto& pair : m_textCache) {
-        SDL_DestroyTexture(pair.second);
-    }
-    m_textCache.clear();
     if (m_rend)  { SDL_DestroyRenderer(m_rend); m_rend = nullptr; }
 }
 
@@ -77,8 +73,8 @@ void Renderer::render(const World& world, const Player& player,
     renderPlayer(player, cam, amb);
     renderHUD(player, fps, input);
 
-    if (craftUI && player.inventory().isOpen())
-        craftUI->render(this, player.inventory());
+    if (craftUI && const_cast<Player&>(player).inventory().isOpen())
+        craftUI->render(m_rend, m_atlas, const_cast<Player&>(player).inventory());
 
     SDL_RenderPresent(m_rend);
 }
@@ -133,36 +129,34 @@ void Renderer::renderChunks(const World& world, const Camera& cam, uint8_t amb) 
 
 void Renderer::renderBlock(int sx, int sy, uint8_t id, uint8_t amb, bool topExposed) {
     SDL_Rect dst = {sx, sy, BLOCK_SIZE, BLOCK_SIZE};
-    
-    if (m_atlas.isLoaded()) {
-        SDL_SetTextureColorMod(m_atlas.texture(), amb, amb, amb);
-        
-        // Main face
-        SDL_Rect src = m_atlas.getRect(id, false);
-        SDL_RenderCopy(m_rend, m_atlas.texture(), &src, &dst);
+    SDL_Color base = dimBy(blockColor(id), amb);
 
-        // Top face highlight (only if top is exposed to air)
-        if (topExposed && BLOCK_SIZE >= 16) {
-            SDL_Rect srcTop = m_atlas.getRect(id, true);
-            SDL_Rect dstTop = {sx, sy, BLOCK_SIZE, BLOCK_SIZE/5};
-            srcTop.h /= 5; // Use top 1/5th of the top texture
-            SDL_RenderCopy(m_rend, m_atlas.texture(), &srcTop, &dstTop);
-        }
-    } else {
-        SDL_Color base = dimBy(blockColor(id), amb);
-        SDL_SetRenderDrawColor(m_rend, base.r, base.g, base.b, base.a);
-        SDL_RenderFillRect(m_rend, &dst);
+    // Main face
+    SDL_SetRenderDrawColor(m_rend, base.r, base.g, base.b, base.a);
+    SDL_RenderFillRect(m_rend, &dst);
 
-        if (topExposed && BLOCK_SIZE >= 16) {
-            SDL_Color top = dimBy(lighten(blockColor(id), 1.35f), amb);
-            SDL_Rect topBar = {sx, sy, BLOCK_SIZE, BLOCK_SIZE/5};
-            SDL_SetRenderDrawColor(m_rend, top.r, top.g, top.b, top.a);
-            SDL_RenderFillRect(m_rend, &topBar);
-        }
+    // Top face highlight (only if top is exposed to air)
+    if (topExposed && BLOCK_SIZE >= 16) {
+        SDL_Color top = dimBy(lighten(blockColor(id), 1.35f), amb);
+        SDL_Rect topBar = {sx, sy, BLOCK_SIZE, BLOCK_SIZE/5};
+        SDL_SetRenderDrawColor(m_rend, top.r, top.g, top.b, top.a);
+        SDL_RenderFillRect(m_rend, &topBar);
+    }
+
+    // Ore dot overlay
+    if (id >= BLOCK_COAL_ORE && id <= BLOCK_DIAMOND_ORE) {
+        static const SDL_Color oreDots[] = {
+            {20,20,20,255},{200,130,90,255},{255,200,20,255},{0,230,230,255}
+        };
+        SDL_Color dc = oreDots[id - BLOCK_COAL_ORE];
+        int m = BLOCK_SIZE/4;
+        SDL_Rect dot = {sx+m, sy+m, BLOCK_SIZE/2, BLOCK_SIZE/2};
+        SDL_SetRenderDrawColor(m_rend, dc.r, dc.g, dc.b, 200);
+        SDL_RenderFillRect(m_rend, &dot);
     }
 
     // Grid line (subtle border)
-    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 25);
+    SDL_SetRenderDrawColor(m_rend, 0, 0, 0, 40);
     SDL_RenderDrawRect(m_rend, &dst);
 }
 
@@ -236,7 +230,10 @@ void Renderer::renderPlayer(const Player& p, const Camera& cam, uint8_t amb) {
     // Held item in hand
     const ItemStack& held = const_cast<Player&>(p).inventory().heldItem();
     if (!held.empty()) {
-        drawItem(held.id, sx + PLAYER_W, sy + PLAYER_H/2, 12);
+        SDL_Color ic = blockColor(held.id);
+        SDL_SetRenderDrawColor(m_rend, ic.r, ic.g, ic.b, 255);
+        SDL_Rect item = {sx + PLAYER_W, sy + PLAYER_H/2, 10, 10};
+        SDL_RenderFillRect(m_rend, &item);
     }
 }
 
@@ -260,10 +257,8 @@ void Renderer::renderHUD(const Player& p, float fps, const InputManager* input) 
     snprintf(buf, sizeof(buf), "FPS:%.0f", fps);
     drawText(buf, 6, 6, {255,255,100,255});
 
-    // Touch joystick overlay
-    if (input && input->joyActive()) {
-        renderTouchOverlay(*input);
-    }
+    // Touch joystick: always visible on mobile
+    if (input) renderTouchOverlay(*input);
 
     // Touch control hints (semi-transparent, shown always on mobile)
 #if defined(PLATFORM_ANDROID) || defined(PLATFORM_WEB)
@@ -314,7 +309,10 @@ void Renderer::renderHotbar(const Player& p) {
 
         const ItemStack& item = p.inventory().hotbarSlot(i);
         if (!item.empty()) {
-            drawItem(item.id, sx+5, BY+5, SZ-10);
+            SDL_Color ic = blockColor(item.id);
+            SDL_SetRenderDrawColor(m_rend, ic.r, ic.g, ic.b, ic.a);
+            SDL_Rect iRect = {sx+5, BY+5, SZ-10, SZ-10};
+            SDL_RenderFillRect(m_rend, &iRect);
             // Count
             if (item.count > 1) {
                 char cnt[8]; snprintf(cnt,sizeof(cnt),"%d",item.count);
@@ -325,25 +323,40 @@ void Renderer::renderHotbar(const Player& p) {
 }
 
 void Renderer::renderTouchOverlay(const InputManager& inp) {
-    if (!inp.joyActive()) return;
     float bx=inp.joyBaseX(), by=inp.joyBaseY();
     float sx=inp.joyStickX(), sy=inp.joyStickY();
     int R=(int)TOUCH_JOYSTICK_R;
 
-    // Outer ring
-    SDL_SetRenderDrawColor(m_rend,255,255,255,35);
-    SDL_Rect outer={( int)bx-R,(int)by-R,R*2,R*2};
+    // Always show outer base ring (dimmer when inactive)
+    uint8_t baseAlpha = inp.joyActive() ? 80 : 35;
+    SDL_SetRenderDrawColor(m_rend,255,255,255,baseAlpha);
+    SDL_Rect outer={(int)bx-R,(int)by-R,R*2,R*2};
     SDL_RenderFillRect(m_rend,&outer);
-    SDL_SetRenderDrawColor(m_rend,255,255,255,100);
+    SDL_SetRenderDrawColor(m_rend,255,255,255,inp.joyActive()?150:70);
     SDL_RenderDrawRect(m_rend,&outer);
 
-    // Inner stick nub
-    int nr=20;
-    SDL_Rect nub={(int)sx-nr,(int)sy-nr,nr*2,nr*2};
-    SDL_SetRenderDrawColor(m_rend,255,255,255,150);
-    SDL_RenderFillRect(m_rend,&nub);
-    SDL_SetRenderDrawColor(m_rend,220,220,220,220);
-    SDL_RenderDrawRect(m_rend,&nub);
+    // Cross lines in base
+    SDL_SetRenderDrawColor(m_rend,255,255,255,inp.joyActive()?80:40);
+    SDL_Rect hline={(int)bx-R+4,(int)by-1,R*2-8,2};
+    SDL_Rect vline={(int)bx-1,(int)by-R+4,2,R*2-8};
+    SDL_RenderFillRect(m_rend,&hline);
+    SDL_RenderFillRect(m_rend,&vline);
+
+    // Stick nub: only when active
+    if (inp.joyActive()) {
+        int nr=22;
+        SDL_Rect nub={(int)sx-nr,(int)sy-nr,nr*2,nr*2};
+        SDL_SetRenderDrawColor(m_rend,255,255,255,180);
+        SDL_RenderFillRect(m_rend,&nub);
+        SDL_SetRenderDrawColor(m_rend,200,200,200,240);
+        SDL_RenderDrawRect(m_rend,&nub);
+    } else {
+        // Center dot when inactive
+        int nr=12;
+        SDL_Rect nub={(int)bx-nr,(int)by-nr,nr*2,nr*2};
+        SDL_SetRenderDrawColor(m_rend,255,255,255,60);
+        SDL_RenderFillRect(m_rend,&nub);
+    }
 }
 
 void Renderer::drawRect(int x,int y,int w,int h,SDL_Color c,bool fill){
@@ -355,51 +368,27 @@ void Renderer::drawRect(int x,int y,int w,int h,SDL_Color c,bool fill){
 
 void Renderer::drawText(const std::string& txt,int x,int y,SDL_Color col){
     if (!m_font) {
+        // Fallback: pixel blocks for text
         SDL_SetRenderDrawColor(m_rend,col.r,col.g,col.b,col.a);
         SDL_Rect r={x,y,(int)txt.size()*6,8};
         SDL_RenderFillRect(m_rend,&r);
         return;
     }
-
-    uint32_t colKey = (col.r << 24) | (col.g << 16) | (col.b << 8) | col.a;
-    TextCacheKey key = {txt, colKey};
-    
-    SDL_Texture* tex = nullptr;
-    auto it = m_textCache.find(key);
-    if (it != m_textCache.end()) {
-        tex = it->second;
-    } else {
-        SDL_Surface* s = TTF_RenderText_Blended(m_font, txt.c_str(), col);
-        if (!s) return;
-        tex = SDL_CreateTextureFromSurface(m_rend, s);
-        SDL_FreeSurface(s);
-        if (!tex) return;
-        m_textCache[key] = tex;
-        
-        // Simple cache pruning if it gets too large
-        if (m_textCache.size() > 100) {
-            auto kill = m_textCache.begin();
-            SDL_DestroyTexture(kill->second);
-            m_textCache.erase(kill);
-        }
-    }
-
-    int tw, th;
-    SDL_QueryTexture(tex, nullptr, nullptr, &tw, &th);
-    SDL_Rect dst = {x, y, tw, th};
-    SDL_RenderCopy(m_rend, tex, nullptr, &dst);
+    SDL_Surface* s=TTF_RenderText_Solid(m_font,txt.c_str(),col);
+    if(!s) return;
+    SDL_Texture* t=SDL_CreateTextureFromSurface(m_rend,s);
+    SDL_FreeSurface(s);
+    if(!t) return;
+    int tw,th;
+    SDL_QueryTexture(t,nullptr,nullptr,&tw,&th);
+    SDL_Rect dst={x,y,tw,th};
+    SDL_RenderCopy(m_rend,t,nullptr,&dst);
+    SDL_DestroyTexture(t);
 }
 
 void Renderer::drawItem(uint8_t id,int x,int y,int size){
-    if (m_atlas.isLoaded()) {
-        SDL_SetTextureColorMod(m_atlas.texture(), 255, 255, 255);
-        SDL_Rect src = m_atlas.getRect(id, false);
-        SDL_Rect dst = {x, y, size, size};
-        SDL_RenderCopy(m_rend, m_atlas.texture(), &src, &dst);
-    } else {
-        SDL_Color c = blockColor(id);
-        SDL_SetRenderDrawColor(m_rend, c.r, c.g, c.b, c.a);
-        SDL_Rect r = {x, y, size, size};
-        SDL_RenderFillRect(m_rend, &r);
-    }
+    SDL_Color c=blockColor(id);
+    SDL_SetRenderDrawColor(m_rend,c.r,c.g,c.b,c.a);
+    SDL_Rect r={x,y,size,size};
+    SDL_RenderFillRect(m_rend,&r);
 }

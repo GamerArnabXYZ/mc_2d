@@ -1,6 +1,6 @@
 #pragma once
-#include "SDL_incl.h"
-#include "../core/Timer.h"
+#include <SDL2/SDL.h>
+#include "Timer.h"
 #include "../world/World.h"
 #include "../player/Player.h"
 #include "../renderer/Renderer.h"
@@ -9,18 +9,15 @@
 #include "../save/SaveManager.h"
 #include "../ui/CraftingUI.h"
 
-// ─── Game ─────────────────────────────────────────────────────────────────────
 class Game {
 public:
     Game();
     ~Game();
 
     bool init();
-    void run();      // desktop: blocking loop; web: sets emscripten callback
+    void run();
     void shutdown();
-
-    // Called once per frame — used by emscripten callback
-    void tickFrame();
+    void tickFrame(); // emscripten per-frame callback
 
 private:
     SDL_Window*   m_win;
@@ -33,10 +30,18 @@ private:
     SaveManager   m_save;
     CraftingUI    m_craftUI;
 
+    GameState     m_state;
     bool          m_running;
     float         m_saveTimer;
 
-    void update(float dt);
+    // Actual render size (may differ from WINDOW_W/H on mobile)
+    int           m_screenW, m_screenH;
+
+    void tickHome(float dt);
+    void tickPlaying(float dt);
+    void renderHome();
     void processInput();
+    void update(float dt);
     void autoSave(float dt);
+    void getScreenSize();
 };

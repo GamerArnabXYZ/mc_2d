@@ -52,9 +52,9 @@ bool SaveManager::savePlayer(const Player& p) {
     PlayerSave ps;
     ps.x        = p.x();
     ps.y        = p.y();
-    ps.selected = p.inventory().selected();
+    ps.selected = const_cast<Player&>(p).inventory().selected();
     for (int i = 0; i < HOTBAR_SLOTS; i++) {
-        const ItemStack& s = p.inventory().hotbarSlot(i);
+        ItemStack& s    = const_cast<Player&>(p).inventory().hotbarSlot(i);
         ps.hotbarID[i]  = s.id;
         ps.hotbarCount[i] = s.count;
     }

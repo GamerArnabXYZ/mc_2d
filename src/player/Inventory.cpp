@@ -8,7 +8,7 @@ const CraftingRecipe Inventory::RECIPES[] = {
     // Planks from wood (any single wood in grid)
     {{BLOCK_WOOD, 0, 0, 0},    BLOCK_PLANKS,     4},
     // Sticks from 2 planks (vertical)
-    {{BLOCK_PLANKS, 0, BLOCK_PLANKS, 0}, ITEM_STICK, 4},
+    {{BLOCK_PLANKS, 0, BLOCK_PLANKS, 0}, 255, 4}, // item 255 = sticks TODO
     // Crafting table: 4 planks
     {{BLOCK_PLANKS, BLOCK_PLANKS, BLOCK_PLANKS, BLOCK_PLANKS}, BLOCK_CRAFTING, 1},
     // Glass from sand + dirt as fuel (simplified, 2 sand = 1 glass)

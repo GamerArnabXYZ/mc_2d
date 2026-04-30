@@ -129,13 +129,9 @@ void WorldGen::placeOres(Chunk& chunk, int lx, int surfY, int cx) {
         { BLOCK_GOLD_ORE,     surfY+25, CHUNK_H-8,   14 },
         { BLOCK_DIAMOND_ORE,  surfY+40, CHUNK_H-4,   22 },
     };
-    
-    // Seed and chunk part are constant for the entire LX column
-    const int base_h = m_seed * 31 + cx * 997 + lx * 13;
-
     for (auto& o : ores) {
         for (int ly = o.minY; ly < o.maxY && ly < CHUNK_H; ly++) {
-            int h = (base_h + ly * 7) & 0x7FFF;
+            int h = (m_seed*31 + cx*997 + lx*13 + ly*7) & 0x7FFF;
             if ((h % o.freq) == 0 && chunk.get(lx,ly) == BLOCK_STONE)
                 chunk.set(lx, ly, o.id);
         }
